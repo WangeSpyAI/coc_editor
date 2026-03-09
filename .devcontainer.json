@@ -1,0 +1,43 @@
+{
+  "name": "node-vite-react-dev",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:22-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": false,
+      "installOhMyZsh": false,
+      "username": "automatic",
+      "userUid": "automatic",
+      "userGid": "automatic"
+    }
+  },
+  "remoteUser": "node",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "Anthropic.claude-code",
+        "visualjj.visualjj",
+        "bradlc.vscode-tailwindcss",
+        "bierner.markdown-mermaid",
+        "DavidAnson.vscode-markdownlint"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "[typescript]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[typescriptreact]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[markdown]": {
+          "editor.codeActionsOnSave": {
+            "source.fixAll.markdownlint": "explicit"
+          }
+        }
+      }
+    }
+  },
+  "postCreateCommand": "[ -f package.json ] || (orig=$PWD && tmp=$(mktemp -d) && cd \"$tmp\" && CI=true npx --yes create-vite@6 app --template react-ts && cp -rn app/. \"$orig\" && rm -rf \"$tmp\") && npm install"
+}
