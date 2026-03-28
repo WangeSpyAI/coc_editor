@@ -79,6 +79,10 @@ function handleImport() {
       <textarea rows="4" :value="store.scenario.synopsis" @input="handleChange('synopsis', ($event.target as HTMLTextAreaElement).value)" />
     </label>
     <label class="form-full">
+      真相
+      <textarea rows="4" :value="store.scenario.truth" @input="handleChange('truth', ($event.target as HTMLTextAreaElement).value)" />
+    </label>
+    <label class="form-full">
       背景情報
       <textarea rows="4" :value="store.scenario.backgroundInfo" @input="handleChange('backgroundInfo', ($event.target as HTMLTextAreaElement).value)" />
     </label>
@@ -92,7 +96,7 @@ function handleImport() {
       <span>場所: {{ store.scenario.locations.length }}</span>
       <span>手がかり: {{ store.scenario.clues.length }}</span>
       <span>イベント: {{ store.scenario.events.length }}</span>
-      <span>シーン: {{ store.scenario.scenes.length }}</span>
+      <span>タイムライン: {{ store.scenario.timeline.length }}</span>
     </div>
   </div>
 </template>

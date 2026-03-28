@@ -6,7 +6,7 @@ import NPCEditor from './components/NPCEditor.vue'
 import LocationEditor from './components/LocationEditor.vue'
 import ClueEditor from './components/ClueEditor.vue'
 import EventEditor from './components/EventEditor.vue'
-import SceneEditor from './components/SceneEditor.vue'
+import TimelineEditor from './components/TimelineEditor.vue'
 import './App.css'
 
 const store = useScenarioStore()
@@ -21,7 +21,7 @@ const store = useScenarioStore()
       <LocationEditor v-else-if="store.activeTab === 'location'" />
       <ClueEditor v-else-if="store.activeTab === 'clue'" />
       <EventEditor v-else-if="store.activeTab === 'event'" />
-      <SceneEditor v-else-if="store.activeTab === 'scene'" />
+      <TimelineEditor v-else-if="store.activeTab === 'timeline'" />
     </main>
   </div>
 </template>

@@ -6,7 +6,7 @@ const store = useScenarioStore()
 
 const tabs: { key: ScenarioElementType | 'overview'; label: string }[] = [
   { key: 'overview', label: '概要' },
-  { key: 'scene', label: 'シーン' },
+  { key: 'timeline', label: 'タイムライン' },
   { key: 'npc', label: 'NPC' },
   { key: 'location', label: '場所' },
   { key: 'clue', label: '手がかり' },
@@ -19,7 +19,7 @@ function getItems(tab: ScenarioElementType) {
     case 'location': return store.scenario.locations
     case 'clue': return store.scenario.clues
     case 'event': return store.scenario.events
-    case 'scene': return store.scenario.scenes
+    case 'timeline': return store.scenario.timeline
   }
 }
 
@@ -30,9 +30,16 @@ function handleAdd() {
     location: () => store.addLocation(),
     clue: () => store.addClue(),
     event: () => store.addEvent(),
-    scene: () => store.addScene(),
+    timeline: () => store.addTimelineEntry(),
   }
   actionMap[store.activeTab]()
+}
+
+function getItemLabel(tab: ScenarioElementType, item: Record<string, unknown>) {
+  if (tab === 'timeline') {
+    return (item.time as string) || (item.description as string) || '(未設定)'
+  }
+  return item.name as string
 }
 </script>
 
@@ -65,7 +72,7 @@ function handleAdd() {
           :class="{ selected: store.selectedElement?.id === item.id }"
           @click="store.selectElement({ type: store.activeTab as ScenarioElementType, id: item.id })"
         >
-          {{ item.name }}
+          {{ getItemLabel(store.activeTab as ScenarioElementType, item as unknown as Record<string, unknown>) }}
         </li>
       </ul>
     </div>

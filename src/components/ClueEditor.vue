@@ -42,14 +42,27 @@ function handleDelete() {
     </div>
 
     <label class="form-full">
-      発見場所
+      初期所在（場所）
       <select
-        :value="clue.locationId ?? ''"
-        @change="update({ locationId: ($event.target as HTMLSelectElement).value || undefined })"
+        :value="clue.initialLocationId ?? ''"
+        @change="update({ initialLocationId: ($event.target as HTMLSelectElement).value || undefined })"
       >
         <option value="">未設定</option>
         <option v-for="l in store.scenario.locations" :key="l.id" :value="l.id">
           {{ l.name }}
+        </option>
+      </select>
+    </label>
+
+    <label class="form-full">
+      初期所持者（NPC）
+      <select
+        :value="clue.initialHolderId ?? ''"
+        @change="update({ initialHolderId: ($event.target as HTMLSelectElement).value || undefined })"
+      >
+        <option value="">未設定</option>
+        <option v-for="n in store.scenario.npcs" :key="n.id" :value="n.id">
+          {{ n.name }}
         </option>
       </select>
     </label>

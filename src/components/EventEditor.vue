@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useScenarioStore } from '../store/scenario'
-import type { Event } from '../types/scenario'
+import type { ScenarioEvent } from '../types/scenario'
 
 const store = useScenarioStore()
 
@@ -9,7 +9,7 @@ const event = computed(() =>
   store.scenario.events.find((e) => e.id === store.selectedElement?.id)
 )
 
-function update(changes: Partial<Event>) {
+function update(changes: Partial<ScenarioEvent>) {
   if (!event.value) return
   store.updateEvent({ ...event.value, ...changes })
 }

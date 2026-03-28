@@ -5,8 +5,8 @@ import type {
   NPC,
   Location,
   Clue,
-  Event,
-  Scene,
+  ScenarioEvent,
+  TimelineEntry,
   ScenarioElementType,
 } from '../types/scenario'
 import { createEmptyScenario } from '../utils/scenario'
@@ -46,7 +46,15 @@ export const useScenarioStore = defineStore('scenario', () => {
 
   // NPC
   function addNpc() {
-    const npc: NPC = { id: generateId(), name: '新規NPC', description: '', notes: '' }
+    const npc: NPC = {
+      id: generateId(),
+      name: '新規NPC',
+      description: '',
+      traits: [],
+      relations: [],
+      initialKnowledge: [],
+      notes: '',
+    }
     scenario.value.npcs.push(npc)
     selectedElement.value = { type: 'npc', id: npc.id }
     touch()
@@ -68,7 +76,16 @@ export const useScenarioStore = defineStore('scenario', () => {
 
   // Location
   function addLocation() {
-    const loc: Location = { id: generateId(), name: '新規場所', description: '', clueIds: [], npcIds: [], notes: '' }
+    const loc: Location = {
+      id: generateId(),
+      name: '新規場所',
+      description: '',
+      tags: [],
+      connectedLocationIds: [],
+      clueIds: [],
+      npcIds: [],
+      notes: '',
+    }
     scenario.value.locations.push(loc)
     selectedElement.value = { type: 'location', id: loc.id }
     touch()
@@ -90,7 +107,14 @@ export const useScenarioStore = defineStore('scenario', () => {
 
   // Clue
   function addClue() {
-    const clue: Clue = { id: generateId(), name: '新規手がかり', description: '', isKey: false, notes: '' }
+    const clue: Clue = {
+      id: generateId(),
+      name: '新規手がかり',
+      description: '',
+      isKey: false,
+      leadsTo: [],
+      notes: '',
+    }
     scenario.value.clues.push(clue)
     selectedElement.value = { type: 'clue', id: clue.id }
     touch()
@@ -112,13 +136,20 @@ export const useScenarioStore = defineStore('scenario', () => {
 
   // Event
   function addEvent() {
-    const evt: Event = { id: generateId(), name: '新規イベント', trigger: '', description: '', outcome: '', notes: '' }
+    const evt: ScenarioEvent = {
+      id: generateId(),
+      name: '新規イベント',
+      trigger: '',
+      description: '',
+      outcome: '',
+      notes: '',
+    }
     scenario.value.events.push(evt)
     selectedElement.value = { type: 'event', id: evt.id }
     touch()
   }
 
-  function updateEvent(evt: Event) {
+  function updateEvent(evt: ScenarioEvent) {
     const idx = scenario.value.events.findIndex((e) => e.id === evt.id)
     if (idx !== -1) {
       scenario.value.events[idx] = evt
@@ -132,34 +163,29 @@ export const useScenarioStore = defineStore('scenario', () => {
     touch()
   }
 
-  // Scene
-  function addScene() {
-    const scene: Scene = {
+  // Timeline
+  function addTimelineEntry() {
+    const entry: TimelineEntry = {
       id: generateId(),
-      name: '新規シーン',
-      order: scenario.value.scenes.length + 1,
+      time: '',
       description: '',
-      locationIds: [],
-      eventIds: [],
-      npcIds: [],
-      clueIds: [],
       notes: '',
     }
-    scenario.value.scenes.push(scene)
-    selectedElement.value = { type: 'scene', id: scene.id }
+    scenario.value.timeline.push(entry)
+    selectedElement.value = { type: 'timeline', id: entry.id }
     touch()
   }
 
-  function updateScene(scene: Scene) {
-    const idx = scenario.value.scenes.findIndex((s) => s.id === scene.id)
+  function updateTimelineEntry(entry: TimelineEntry) {
+    const idx = scenario.value.timeline.findIndex((t) => t.id === entry.id)
     if (idx !== -1) {
-      scenario.value.scenes[idx] = scene
+      scenario.value.timeline[idx] = entry
       touch()
     }
   }
 
-  function deleteScene(id: string) {
-    scenario.value.scenes = scenario.value.scenes.filter((s) => s.id !== id)
+  function deleteTimelineEntry(id: string) {
+    scenario.value.timeline = scenario.value.timeline.filter((t) => t.id !== id)
     if (selectedElement.value?.id === id) selectedElement.value = null
     touch()
   }
@@ -189,9 +215,9 @@ export const useScenarioStore = defineStore('scenario', () => {
     addEvent,
     updateEvent,
     deleteEvent,
-    addScene,
-    updateScene,
-    deleteScene,
+    addTimelineEntry,
+    updateTimelineEntry,
+    deleteTimelineEntry,
     markSaved,
   }
 })
