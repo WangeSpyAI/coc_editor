@@ -61,16 +61,16 @@ describe('createSession', () => {
     expect(misakiState.alive).toBe(true)
   })
 
-  it('NPC初期配置がlocationStatesのvisitedByに反映される', () => {
+  it('NPC初期配置ではvisitedByに追加されない（NPCは訪問者ではない）', () => {
     const { session } = setup()
     const entranceState = session.worldState.locationStates['loc-entrance']
-    expect(entranceState.visitedBy).toContain('npc-misaki')
+    expect(entranceState.visitedBy).not.toContain('npc-misaki')
 
     const basementState = session.worldState.locationStates['loc-basement']
-    expect(basementState.visitedBy).toContain('npc-sato')
+    expect(basementState.visitedBy).not.toContain('npc-sato')
 
     const townState = session.worldState.locationStates['loc-town']
-    expect(townState.visitedBy).toContain('npc-tanaka')
+    expect(townState.visitedBy).not.toContain('npc-tanaka')
   })
 
   it('手がかり状態が初期化される', () => {

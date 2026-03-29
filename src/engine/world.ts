@@ -66,10 +66,10 @@ export function initializeWorldState(scenario: Scenario): WorldState {
     flags: {},
   };
 
-  // Place NPCs at initial locations via the canonical placeActorAt
+  // Set NPC initial locationId (without adding to visitedBy — NPCs aren't "visitors")
   for (const npc of scenario.npcs) {
-    if (npc.initialLocationId) {
-      placeActorAt(worldState, npc.id, npc.initialLocationId);
+    if (npc.initialLocationId && worldState.actorStates[npc.id]) {
+      worldState.actorStates[npc.id].locationId = npc.initialLocationId;
     }
   }
 

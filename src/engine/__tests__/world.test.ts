@@ -91,10 +91,14 @@ describe('getManualEvents', () => {
 describe('getAvailableEvents', () => {
   it('条件未達のイベントは返されない', () => {
     const { scenario, session } = setup()
-    const avail = getAvailableEvents(scenario, session.worldState)
-    // evt-welcome needs locationVisited for loc-entrance by someone
-    // entrance already has npc-misaki in visitedBy, so it should be available
-    expect(avail.map((e) => e.id)).toContain('evt-welcome')
+    // NPC初期配置ではvisitedByに追加されないので、初期状態ではevt-welcomeは未達
+    const avail0 = getAvailableEvents(scenario, session.worldState)
+    expect(avail0.map((e) => e.id)).not.toContain('evt-welcome')
+
+    // PCがloc-entranceを訪問すると条件達成
+    session.worldState.locationStates['loc-entrance'].visitedBy.push('pc-taro')
+    const avail1 = getAvailableEvents(scenario, session.worldState)
+    expect(avail1.map((e) => e.id)).toContain('evt-welcome')
   })
 
   it('発生済みの非繰り返しイベントは返されない', () => {
