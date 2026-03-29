@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useAppStore } from './store/app'
 import { useScenarioStore } from './store/scenario'
 import Sidebar from './components/Sidebar.vue'
@@ -13,11 +14,22 @@ import './App.css'
 
 const appStore = useAppStore()
 const scenarioStore = useScenarioStore()
+const sidebarOpen = ref(false)
+
+function toggleSidebar() {
+  sidebarOpen.value = !sidebarOpen.value
+}
+
+function closeSidebar() {
+  sidebarOpen.value = false
+}
 </script>
 
 <template>
   <div v-if="appStore.mode === 'editor'" class="app-layout">
-    <Sidebar />
+    <button class="mobile-menu-btn" @click="toggleSidebar">&#9776;</button>
+    <div :class="['sidebar-overlay', { visible: sidebarOpen }]" @click="closeSidebar" />
+    <Sidebar :class="{ open: sidebarOpen }" @click="closeSidebar" />
     <main class="editor-main">
       <OverviewEditor v-if="scenarioStore.activeTab === 'overview'" />
       <NPCEditor v-else-if="scenarioStore.activeTab === 'npc'" />
