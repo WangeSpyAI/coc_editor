@@ -3,6 +3,21 @@ import type { WorldState, ActorRuntimeState, EventStatus } from '../types/engine
 import { evaluateCondition } from './conditions';
 
 /**
+ * Core primitive: place an actor at a location.
+ * Updates both actorState.locationId and locationStates.visitedBy.
+ * ALL location changes MUST go through this function.
+ */
+export function placeActorAt(state: WorldState, actorId: string, locationId: string): void {
+  const actorState = state.actorStates[actorId];
+  if (actorState) actorState.locationId = locationId;
+
+  const locState = state.locationStates[locationId];
+  if (locState && !locState.visitedBy.includes(actorId)) {
+    locState.visitedBy.push(actorId);
+  }
+}
+
+/**
  * Initialize a WorldState from a scenario template.
  */
 export function initializeWorldState(scenario: Scenario): WorldState {
@@ -32,11 +47,7 @@ export function initializeWorldState(scenario: Scenario): WorldState {
 
   const locationStates: Record<string, WorldState['locationStates'][string]> = {};
   for (const loc of scenario.locations) {
-    // NPCs present at this location from the start
-    const npcsHere = scenario.npcs
-      .filter((n) => n.initialLocationId === loc.id)
-      .map((n) => n.id);
-    locationStates[loc.id] = { visitedBy: npcsHere, custom: {} };
+    locationStates[loc.id] = { visitedBy: [], custom: {} };
   }
 
   const eventStates: Record<string, WorldState['eventStates'][string]> = {};
@@ -44,7 +55,7 @@ export function initializeWorldState(scenario: Scenario): WorldState {
     eventStates[evt.id] = { occurred: false, occurredCount: 0 };
   }
 
-  return {
+  const worldState: WorldState = {
     currentTime: '',
     facts: [],
     actorStates,
@@ -53,6 +64,15 @@ export function initializeWorldState(scenario: Scenario): WorldState {
     eventStates,
     flags: {},
   };
+
+  // Place NPCs at initial locations via the canonical placeActorAt
+  for (const npc of scenario.npcs) {
+    if (npc.initialLocationId) {
+      placeActorAt(worldState, npc.id, npc.initialLocationId);
+    }
+  }
+
+  return worldState;
 }
 
 /**

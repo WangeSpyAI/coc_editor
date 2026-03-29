@@ -1,7 +1,7 @@
 import type { Scenario, PCTemplate } from '../types/scenario';
 import type { GameSession, Fact } from '../types/engine';
 import { generateId } from '../utils/id';
-import { initializeWorldState } from './world';
+import { initializeWorldState, placeActorAt } from './world';
 import { applyEffects } from './effects';
 import { evaluateCondition } from './conditions';
 
@@ -167,12 +167,8 @@ export function addPlayerCharacter(session: GameSession, pc: PCTemplate): void {
   };
   session.pcNames[pc.id] = pc.name;
 
-  // Record initial location visit
   if (pc.initialLocationId) {
-    const locState = session.worldState.locationStates[pc.initialLocationId];
-    if (locState && !locState.visitedBy.includes(pc.id)) {
-      locState.visitedBy.push(pc.id);
-    }
+    placeActorAt(session.worldState, pc.id, pc.initialLocationId);
   }
 }
 
@@ -188,15 +184,9 @@ export function removePlayerCharacter(session: GameSession, pcId: string): void 
  * Move an actor (PC or NPC) to a location.
  */
 export function moveActor(session: GameSession, actorId: string, locationId: string): Fact {
+  placeActorAt(session.worldState, actorId, locationId);
+
   const actorState = session.worldState.actorStates[actorId];
-  if (actorState) actorState.locationId = locationId;
-
-  // Record location visit
-  const locState = session.worldState.locationStates[locationId];
-  if (locState && !locState.visitedBy.includes(actorId)) {
-    locState.visitedBy.push(actorId);
-  }
-
   return addFact(session, {
     timestamp: session.worldState.currentTime,
     factType: actorState?.role === 'pc' ? 'pc_action' : 'npc_action',
@@ -223,15 +213,7 @@ export function killActor(session: GameSession, actorId: string): Fact {
  * Visit a location (records which actor visited).
  */
 export function visitLocation(session: GameSession, locationId: string, actorId: string): Fact {
-  // Update actor's current location
-  const actorState = session.worldState.actorStates[actorId];
-  if (actorState) actorState.locationId = locationId;
-
-  // Record visit
-  const locState = session.worldState.locationStates[locationId];
-  if (locState && !locState.visitedBy.includes(actorId)) {
-    locState.visitedBy.push(actorId);
-  }
+  placeActorAt(session.worldState, actorId, locationId);
   return addFact(session, {
     timestamp: session.worldState.currentTime,
     factType: 'pc_action',

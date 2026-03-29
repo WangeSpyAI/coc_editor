@@ -2,6 +2,7 @@ import type { Effect } from '../types/scenario';
 import type { WorldState, Fact, ActorRuntimeState } from '../types/engine';
 import { generateId } from '../utils/id';
 import { rollDice } from './dice';
+import { placeActorAt } from './world';
 
 /**
  * Apply a list of effects to the world state.
@@ -54,8 +55,8 @@ function applyEffect(effect: Effect, state: WorldState, timestamp: string): Fact
     }
 
     case 'moveActor': {
-      const actor = ensureActorState(state, effect.actorId);
-      actor.locationId = effect.locationId;
+      ensureActorState(state, effect.actorId);
+      placeActorAt(state, effect.actorId, effect.locationId);
       return makeFact(timestamp, 'state_change', `移動した`, [effect.actorId, effect.locationId]);
     }
 

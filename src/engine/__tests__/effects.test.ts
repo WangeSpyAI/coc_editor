@@ -63,10 +63,16 @@ describe('applyEffects', () => {
     expect(state.actorStates['npc-a'].knowledge).toContain('新知識')
   })
 
-  it('moveActor', () => {
+  it('moveActor (locationId更新)', () => {
     const state = makeState()
     applyEffects([{ type: 'moveActor', actorId: 'npc-a', locationId: 'loc-2' }], state, 'T1')
     expect(state.actorStates['npc-a'].locationId).toBe('loc-2')
+  })
+
+  it('moveActor (visitedByも更新される)', () => {
+    const state = makeState()
+    applyEffects([{ type: 'moveActor', actorId: 'npc-a', locationId: 'loc-2' }], state, 'T1')
+    expect(state.locationStates['loc-2'].visitedBy).toContain('npc-a')
   })
 
   it('destroyClue', () => {
