@@ -163,6 +163,7 @@ export function addPlayerCharacter(session: GameSession, pc: PCTemplate): void {
     knowledge: [...pc.initialKnowledge],
     inventory: [...pc.inventory],
     role: 'pc',
+    stats: pc.stats ? { ...pc.stats } : undefined,
     custom: {},
   };
   session.pcNames[pc.id] = pc.name;

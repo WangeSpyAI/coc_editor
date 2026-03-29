@@ -16,7 +16,6 @@ import {
   visitLocation,
   discoverClue,
   obtainClueFromActor,
-  killActor,
   advanceTime,
 } from '../session'
 import { applyEffects } from '../effects'

@@ -31,6 +31,7 @@ export function initializeWorldState(scenario: Scenario): WorldState {
       knowledge: [...npc.initialKnowledge],
       inventory: [],
       role: npc.allegiance,
+      stats: npc.stats ? { ...npc.stats } : undefined,
       custom: {},
     };
   }
@@ -103,12 +104,12 @@ export function getAvailableEvents(scenario: Scenario, state: WorldState): Scena
     if (evtState?.occurred && !evt.isRepeatable) return false;
 
     // Check prevention first
-    if (evt.preventedBy && evaluateCondition(evt.preventedBy, state)) return false;
+    if (evt.preventedBy && evaluateCondition(evt.preventedBy, state, scenario)) return false;
 
     switch (evt.triggerType) {
       case 'condition':
         if (!evt.triggerCondition) return false;
-        return evaluateCondition(evt.triggerCondition, state);
+        return evaluateCondition(evt.triggerCondition, state, scenario);
       case 'time':
         return evt.triggerTime === state.currentTime;
       case 'manual':
@@ -140,7 +141,7 @@ export function getEventStatuses(scenario: Scenario, state: WorldState): EventSt
       return { eventId: evt.id, status: 'occurred' as const };
     }
 
-    if (evt.preventedBy && evaluateCondition(evt.preventedBy, state)) {
+    if (evt.preventedBy && evaluateCondition(evt.preventedBy, state, scenario)) {
       return {
         eventId: evt.id,
         status: 'prevented' as const,
@@ -150,6 +151,44 @@ export function getEventStatuses(scenario: Scenario, state: WorldState): EventSt
 
     return { eventId: evt.id, status: 'pending' as const };
   });
+}
+
+/**
+ * Resolve the effective location of an actor using 3-tier fallback:
+ * 1. Runtime locationId (from actorStates)
+ * 2. NPC schedule (if scenario and currentTime provided)
+ * 3. NPC initial location (if scenario provided)
+ *
+ * Returns undefined if location cannot be determined.
+ */
+export function resolveActorLocation(
+  actorId: string,
+  state: WorldState,
+  scenario?: Scenario,
+  currentTime?: string
+): string | undefined {
+  const actorState = state.actorStates[actorId];
+
+  // Tier 1: explicit runtime location
+  if (actorState?.locationId) return actorState.locationId;
+
+  // Tier 2 & 3 require scenario data
+  if (scenario) {
+    const npc = scenario.npcs.find((n) => n.id === actorId);
+    if (npc) {
+      // Tier 2: NPC schedule
+      const time = currentTime ?? state.currentTime;
+      if (time && npc.schedule) {
+        const entry = npc.schedule.find((s) => s.time === time);
+        if (entry?.locationId) return entry.locationId;
+      }
+
+      // Tier 3: initial location
+      if (npc.initialLocationId) return npc.initialLocationId;
+    }
+  }
+
+  return undefined;
 }
 
 /**
@@ -173,20 +212,7 @@ export function getActorsAtLocation(
     const actorState = state.actorStates[actorId];
     if (actorState && !actorState.alive) return false;
 
-    // Explicit runtime location takes priority
-    if (actorState?.locationId) return actorState.locationId === locationId;
-
-    // Fall back to NPC schedule
-    const npc = scenario.npcs.find((n) => n.id === actorId);
-    if (npc && currentTime && npc.schedule) {
-      const entry = npc.schedule.find((s) => s.time === currentTime);
-      if (entry) return entry.locationId === locationId;
-    }
-
-    // Fall back to initial location
-    if (npc) return npc.initialLocationId === locationId;
-
-    return false;
+    return resolveActorLocation(actorId, state, scenario, currentTime) === locationId;
   });
 }
 

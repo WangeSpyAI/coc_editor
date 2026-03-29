@@ -2,9 +2,10 @@ import type {
   Scenario,
   Effect,
   FactType,
+  CharacterStats,
 } from './scenario';
 
-// --- Fact: the core of the engine ---
+// --- Fact: audit log / session history record ---
 
 export interface Fact {
   id: string;
@@ -27,6 +28,8 @@ export interface ActorRuntimeState {
   role: 'pc' | 'hostile' | 'neutral' | 'allied';
   /** NPCの場合の追加状態 */
   attitude?: string;
+  /** CoC character stats (STR, CON, HP, MP, SAN etc.) */
+  stats?: CharacterStats;
   custom: Record<string, string | number | boolean>;
 }
 

@@ -14,7 +14,8 @@ function makeState(): WorldState {
         knowledge: ['既存知識'],
         inventory: ['アイテムA'],
         role: 'neutral',
-        custom: { hp: 10, mp: 5 },
+        stats: { str: 50, con: 50, siz: 50, dex: 50, app: 50, int: 50, pow: 50, edu: 50, hp: 10, mp: 5, san: 50 },
+        custom: {},
       },
     },
     locationStates: {
@@ -117,13 +118,43 @@ describe('applyEffects', () => {
   it('hpChange (numeric)', () => {
     const state = makeState()
     applyEffects([{ type: 'hpChange', targetId: 'npc-a', amount: '-3' }], state, 'T1')
-    expect(state.actorStates['npc-a'].custom['hp']).toBe(7)
+    expect(state.actorStates['npc-a'].stats?.hp).toBe(7)
   })
 
   it('hpChange (下限0)', () => {
     const state = makeState()
     applyEffects([{ type: 'hpChange', targetId: 'npc-a', amount: '-999' }], state, 'T1')
-    expect(state.actorStates['npc-a'].custom['hp']).toBe(0)
+    expect(state.actorStates['npc-a'].stats?.hp).toBe(0)
+  })
+
+  it('mpChange (numeric)', () => {
+    const state = makeState()
+    applyEffects([{ type: 'mpChange', targetId: 'npc-a', amount: '-2' }], state, 'T1')
+    expect(state.actorStates['npc-a'].stats?.mp).toBe(3)
+  })
+
+  it('mpChange (下限0)', () => {
+    const state = makeState()
+    applyEffects([{ type: 'mpChange', targetId: 'npc-a', amount: '-999' }], state, 'T1')
+    expect(state.actorStates['npc-a'].stats?.mp).toBe(0)
+  })
+
+  it('hpChange on actor without stats does not crash', () => {
+    const state = makeState()
+    state.actorStates['no-stats'] = { alive: true, knowledge: [], inventory: [], role: 'neutral', custom: {} }
+    expect(() => {
+      applyEffects([{ type: 'hpChange', targetId: 'no-stats', amount: '-5' }], state, 'T1')
+    }).not.toThrow()
+    expect(state.actorStates['no-stats'].stats?.hp).toBe(0)
+  })
+
+  it('mpChange on actor without stats does not crash', () => {
+    const state = makeState()
+    state.actorStates['no-stats'] = { alive: true, knowledge: [], inventory: [], role: 'neutral', custom: {} }
+    expect(() => {
+      applyEffects([{ type: 'mpChange', targetId: 'no-stats', amount: '-3' }], state, 'T1')
+    }).not.toThrow()
+    expect(state.actorStates['no-stats'].stats?.mp).toBe(0)
   })
 
   it('triggerEvent', () => {

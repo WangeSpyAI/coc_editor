@@ -1,10 +1,20 @@
-import type { Condition } from '../types/scenario';
+import type { Condition, Scenario } from '../types/scenario';
 import type { WorldState } from '../types/engine';
+import { resolveActorLocation } from './world';
 
 /**
  * Evaluate a condition against the current world state.
+ *
+ * When `scenario` is provided, location-based conditions (`npcAt`, `actorAt`)
+ * use the 3-tier fallback (runtime → schedule → initial location), matching
+ * the behavior of `getActorsAtLocation()` in world.ts. Without `scenario`,
+ * only runtime state is checked (backward-compatible).
  */
-export function evaluateCondition(condition: Condition, state: WorldState): boolean {
+export function evaluateCondition(
+  condition: Condition,
+  state: WorldState,
+  scenario?: Scenario
+): boolean {
   switch (condition.type) {
     case 'always':
       return true;
@@ -39,13 +49,13 @@ export function evaluateCondition(condition: Condition, state: WorldState): bool
       return state.actorStates[condition.npcId]?.alive !== false;
 
     case 'npcAt':
-      return state.actorStates[condition.npcId]?.locationId === condition.locationId;
+      return resolveActorLocation(condition.npcId, state, scenario) === condition.locationId;
 
     case 'npcKnows':
       return state.actorStates[condition.npcId]?.knowledge.includes(condition.knowledge) === true;
 
     case 'actorAt':
-      return state.actorStates[condition.actorId]?.locationId === condition.locationId;
+      return resolveActorLocation(condition.actorId, state, scenario) === condition.locationId;
 
     case 'actorKnows':
       return state.actorStates[condition.actorId]?.knowledge.includes(condition.knowledge) === true;
@@ -96,12 +106,12 @@ export function evaluateCondition(condition: Condition, state: WorldState): bool
       return state.currentTime === condition.time;
 
     case 'and':
-      return condition.conditions.every((c) => evaluateCondition(c, state));
+      return condition.conditions.every((c) => evaluateCondition(c, state, scenario));
 
     case 'or':
-      return condition.conditions.some((c) => evaluateCondition(c, state));
+      return condition.conditions.some((c) => evaluateCondition(c, state, scenario));
 
     case 'not':
-      return !evaluateCondition(condition.condition, state);
+      return !evaluateCondition(condition.condition, state, scenario);
   }
 }

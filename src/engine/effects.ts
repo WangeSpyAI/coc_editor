@@ -102,8 +102,11 @@ function applyEffect(effect: Effect, state: WorldState, timestamp: string): Fact
       const amount = resolveAmount(effect.amount);
       const actor = state.actorStates[effect.targetId];
       if (actor) {
-        const hp = (actor.custom['hp'] as number) ?? 0;
-        actor.custom['hp'] = Math.max(0, hp + amount);
+        if (!actor.stats) {
+          actor.stats = { str: 0, con: 0, siz: 0, dex: 0, app: 0, int: 0, pow: 0, edu: 0, hp: 0, mp: 0, san: 0 };
+        }
+        const hp = actor.stats.hp ?? 0;
+        actor.stats.hp = Math.max(0, hp + amount);
       }
       return makeFact(timestamp, 'state_change', `HP が ${amount > 0 ? '+' : ''}${amount} 変化`, [effect.targetId]);
     }
@@ -112,8 +115,11 @@ function applyEffect(effect: Effect, state: WorldState, timestamp: string): Fact
       const amount = resolveAmount(effect.amount);
       const actor = state.actorStates[effect.targetId];
       if (actor) {
-        const mp = (actor.custom['mp'] as number) ?? 0;
-        actor.custom['mp'] = Math.max(0, mp + amount);
+        if (!actor.stats) {
+          actor.stats = { str: 0, con: 0, siz: 0, dex: 0, app: 0, int: 0, pow: 0, edu: 0, hp: 0, mp: 0, san: 0 };
+        }
+        const mp = actor.stats.mp ?? 0;
+        actor.stats.mp = Math.max(0, mp + amount);
       }
       return makeFact(timestamp, 'state_change', `MP が ${amount > 0 ? '+' : ''}${amount} 変化`, [effect.targetId]);
     }

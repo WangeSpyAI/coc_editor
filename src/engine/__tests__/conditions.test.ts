@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { evaluateCondition } from '../conditions'
 import type { WorldState } from '../../types/engine'
-import type { Condition } from '../../types/scenario'
+import type { Condition, Scenario, NPC } from '../../types/scenario'
 
 function makeState(overrides: Partial<WorldState> = {}): WorldState {
   return {
@@ -177,5 +177,145 @@ describe('evaluateCondition', () => {
   it('not', () => {
     expect(evaluateCondition({ type: 'not', condition: { type: 'always' } }, makeState())).toBe(false)
     expect(evaluateCondition({ type: 'not', condition: { type: 'never' } }, makeState())).toBe(true)
+  })
+})
+
+// --- Scenario-aware location resolution tests ---
+
+function makeNpc(overrides: Partial<NPC> = {}): NPC {
+  return {
+    id: 'npc-ghost',
+    name: 'Ghost NPC',
+    description: '',
+    traits: [],
+    relations: [],
+    initialKnowledge: [],
+    initialLocationId: 'loc-library',
+    allegiance: 'neutral',
+    notes: '',
+    ...overrides,
+  }
+}
+
+function makeScenario(npcs: NPC[]): Scenario {
+  return {
+    id: 'scenario-1',
+    title: 'Test',
+    author: '',
+    era: '',
+    playerCount: '1',
+    estimatedTime: '',
+    synopsis: '',
+    truth: '',
+    backgroundInfo: '',
+    keeperNotes: '',
+    npcs,
+    locations: [],
+    clues: [],
+    events: [],
+    createdAt: '',
+    updatedAt: '',
+  }
+}
+
+describe('evaluateCondition with scenario (location fallback)', () => {
+  it('npcAt returns true when NPC has no runtime locationId but initialLocationId matches', () => {
+    // NPC exists in scenario with initialLocationId but has no runtime state
+    const npc = makeNpc({ id: 'npc-ghost', initialLocationId: 'loc-library' })
+    const scenario = makeScenario([npc])
+    const state = makeState()
+    // npc-ghost has no entry in actorStates (no runtime move)
+    delete state.actorStates['npc-ghost']
+
+    const cond: Condition = { type: 'npcAt', npcId: 'npc-ghost', locationId: 'loc-library' }
+    // Without scenario: falls back to runtime-only, returns false
+    expect(evaluateCondition(cond, state)).toBe(false)
+    // With scenario: uses initialLocationId fallback, returns true
+    expect(evaluateCondition(cond, state, scenario)).toBe(true)
+  })
+
+  it('npcAt returns false when NPC initialLocationId does not match', () => {
+    const npc = makeNpc({ id: 'npc-ghost', initialLocationId: 'loc-library' })
+    const scenario = makeScenario([npc])
+    const state = makeState()
+    delete state.actorStates['npc-ghost']
+
+    const cond: Condition = { type: 'npcAt', npcId: 'npc-ghost', locationId: 'loc-basement' }
+    expect(evaluateCondition(cond, state, scenario)).toBe(false)
+  })
+
+  it('npcAt prefers runtime locationId over initialLocationId', () => {
+    const npc = makeNpc({ id: 'npc-misaki', initialLocationId: 'loc-library' })
+    const scenario = makeScenario([npc])
+    const state = makeState()
+    // npc-misaki has runtime locationId = 'loc-entrance' (from makeState)
+
+    const cond: Condition = { type: 'npcAt', npcId: 'npc-misaki', locationId: 'loc-entrance' }
+    expect(evaluateCondition(cond, state, scenario)).toBe(true)
+
+    // initialLocationId should NOT be used when runtime location is set
+    const condInitial: Condition = { type: 'npcAt', npcId: 'npc-misaki', locationId: 'loc-library' }
+    expect(evaluateCondition(condInitial, state, scenario)).toBe(false)
+  })
+
+  it('actorAt returns true for NPC at scheduled location when currentTime matches', () => {
+    const npc = makeNpc({
+      id: 'npc-scheduled',
+      initialLocationId: 'loc-library',
+      schedule: [
+        { time: 'Day1 午後', locationId: 'loc-basement' },
+        { time: 'Day1 夜', locationId: 'loc-entrance' },
+      ],
+    })
+    const scenario = makeScenario([npc])
+    const state = makeState() // currentTime = 'Day1 午後'
+    // No runtime state for npc-scheduled
+    delete state.actorStates['npc-scheduled']
+
+    // Schedule says loc-basement at 'Day1 午後'
+    const cond: Condition = { type: 'actorAt', actorId: 'npc-scheduled', locationId: 'loc-basement' }
+    expect(evaluateCondition(cond, state, scenario)).toBe(true)
+
+    // Not at library (schedule overrides initial)
+    const condLibrary: Condition = { type: 'actorAt', actorId: 'npc-scheduled', locationId: 'loc-library' }
+    expect(evaluateCondition(condLibrary, state, scenario)).toBe(false)
+  })
+
+  it('actorAt falls back to initialLocationId when no schedule entry matches currentTime', () => {
+    const npc = makeNpc({
+      id: 'npc-scheduled',
+      initialLocationId: 'loc-library',
+      schedule: [
+        { time: 'Day2 朝', locationId: 'loc-basement' },
+      ],
+    })
+    const scenario = makeScenario([npc])
+    const state = makeState() // currentTime = 'Day1 午後' -- no schedule match
+    delete state.actorStates['npc-scheduled']
+
+    const cond: Condition = { type: 'actorAt', actorId: 'npc-scheduled', locationId: 'loc-library' }
+    expect(evaluateCondition(cond, state, scenario)).toBe(true)
+  })
+
+  it('scenario-aware npcAt works inside and/or/not combinators', () => {
+    const npc = makeNpc({ id: 'npc-ghost', initialLocationId: 'loc-library' })
+    const scenario = makeScenario([npc])
+    const state = makeState()
+    delete state.actorStates['npc-ghost']
+
+    const cond: Condition = {
+      type: 'and',
+      conditions: [
+        { type: 'npcAt', npcId: 'npc-ghost', locationId: 'loc-library' },
+        { type: 'always' },
+      ],
+    }
+    expect(evaluateCondition(cond, state, scenario)).toBe(true)
+
+    const condNot: Condition = {
+      type: 'not',
+      condition: { type: 'npcAt', npcId: 'npc-ghost', locationId: 'loc-library' },
+    }
+    expect(evaluateCondition(condNot, state, scenario)).toBe(false)
   })
 })
