@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { useScenarioStore } from '../store/scenario'
+import { useAppStore } from '../store/app'
 import type { ScenarioElementType } from '../types/scenario'
 
 const store = useScenarioStore()
+const appStore = useAppStore()
 
 const tabs: { key: ScenarioElementType | 'overview'; label: string }[] = [
   { key: 'overview', label: '概要' },
@@ -75,6 +77,12 @@ function getItemLabel(tab: ScenarioElementType, item: Record<string, unknown>) {
           {{ getItemLabel(store.activeTab as ScenarioElementType, item as unknown as Record<string, unknown>) }}
         </li>
       </ul>
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="session-mode-btn" @click="appStore.setMode('session')">
+        ▶ セッションモード
+      </button>
     </div>
   </aside>
 </template>
