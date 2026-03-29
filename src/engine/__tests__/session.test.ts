@@ -198,6 +198,13 @@ describe('visitLocation', () => {
     expect(session.worldState.locationStates['loc-entrance'].visitedBy).toContain('pc-taro')
   })
 
+  it('visitLocationでアクターのlocationIdが更新される', () => {
+    const { session } = setup()
+    addPlayerCharacter(session, makePc())
+    visitLocation(session, 'loc-entrance', 'pc-taro')
+    expect(session.worldState.actorStates['pc-taro'].locationId).toBe('loc-entrance')
+  })
+
   it('重複してvisitしても1回のみ記録される', () => {
     const { session } = setup()
     addPlayerCharacter(session, makePc())

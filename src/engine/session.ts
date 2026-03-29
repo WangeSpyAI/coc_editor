@@ -223,6 +223,11 @@ export function killActor(session: GameSession, actorId: string): Fact {
  * Visit a location (records which actor visited).
  */
 export function visitLocation(session: GameSession, locationId: string, actorId: string): Fact {
+  // Update actor's current location
+  const actorState = session.worldState.actorStates[actorId];
+  if (actorState) actorState.locationId = locationId;
+
+  // Record visit
   const locState = session.worldState.locationStates[locationId];
   if (locState && !locState.visitedBy.includes(actorId)) {
     locState.visitedBy.push(actorId);
