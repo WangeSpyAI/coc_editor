@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /home/user/coc_editor && if git diff --quiet && git diff --cached --quiet && [ -z \"$(git ls-files --others --exclude-standard)\" ]; then echo '{\"decision\":\"allow\"}'; exit 0; fi && npm test 2>&1 && npm run build 2>&1 && echo '{\"decision\":\"allow\"}' || echo '{\"stopReason\":\"テスト or ビルド失敗。修正してください。\",\"continue\":false}'",
+            "timeout": 120,
+            "statusMessage": "テスト & ビルド実行中..."
+          }
+        ]
+      }
+    ]
+  }
+}
