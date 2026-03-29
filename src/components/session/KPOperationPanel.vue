@@ -1,14 +1,21 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useSessionStore } from '../../store/session'
+import { useEntityNames } from '../../composables/useEntityNames'
+import { storeToRefs } from 'pinia'
+import { getCluesHeldBy } from '../../engine/world'
 
 const s = useSessionStore()
+const { session } = storeToRefs(s)
+const { npcName } = useEntityNames(session)
 
 // --- Time advance ---
 const newTime = ref('')
 const timeShortcuts = computed(() => {
   if (!s.scenario) return []
-  const times = s.scenario.timeline.map((t) => t.time).filter(Boolean)
+  const times = s.scenario.events
+    .filter((e) => e.triggerType === 'time' && e.triggerTime)
+    .map((e) => e.triggerTime!)
   return [...new Set(times)]
 })
 
@@ -18,44 +25,75 @@ function advanceTime() {
   newTime.value = ''
 }
 
-// --- Discover clue ---
+// --- All actors (PC + NPC) ---
+const allActors = computed(() => {
+  if (!s.scenario || !s.worldState) return []
+  const npcs = s.scenario.npcs.map((n) => ({ id: n.id, name: n.name, role: s.worldState!.actorStates[n.id]?.role ?? n.allegiance }))
+  const pcs = Object.entries(s.worldState!.actorStates)
+    .filter(([, st]) => st.role === 'pc')
+    .map(([id]) => ({ id, name: npcName(id), role: 'pc' as const }))
+  return [...pcs, ...npcs]
+})
+
+const aliveActors = computed(() =>
+  allActors.value.filter((a) => s.worldState!.actorStates[a.id]?.alive !== false)
+)
+
+const pcActors = computed(() => aliveActors.value.filter((a) => a.role === 'pc'))
+
+// --- Visit location ---
+const visitLocationId = ref('')
+const visitActorId = ref('')
+
+function visitLocation() {
+  if (!visitLocationId.value || !visitActorId.value) return
+  s.doVisitLocation(visitLocationId.value, visitActorId.value)
+  visitLocationId.value = ''
+}
+
+// --- Discover clue (search at location) ---
 const selectedClueId = ref('')
+const discoverByActorId = ref('')
 const undiscoveredClues = computed(() => {
   if (!s.scenario || !s.worldState) return []
   return s.scenario.clues.filter((c) => {
     const state = s.worldState!.clueStates[c.id]
-    return state && !state.discovered && !state.destroyed
+    return state && !state.discovered && !state.destroyed && c.obtainMethod !== 'conversation'
   })
 })
 
 function discoverClue() {
   if (!selectedClueId.value) return
-  s.doDiscoverClue(selectedClueId.value)
+  s.doDiscoverClue(selectedClueId.value, discoverByActorId.value || undefined)
   selectedClueId.value = ''
 }
 
-// --- Move NPC ---
-const moveNpcId = ref('')
-const moveLocationId = ref('')
-const aliveNpcs = computed(() => {
-  if (!s.scenario || !s.worldState) return []
-  return s.scenario.npcs.filter((n) => s.worldState!.npcStates[n.id]?.alive !== false)
+// --- Obtain clue from NPC (conversation) ---
+const obtainClueNpcId = ref('')
+const obtainClueId = ref('')
+const obtainToActorId = ref('')
+
+const conversationClues = computed(() => {
+  if (!s.scenario || !s.worldState || !obtainClueNpcId.value) return []
+  const held = getCluesHeldBy(obtainClueNpcId.value, s.worldState!)
+  return s.scenario.clues.filter((c) => held.includes(c.id) && !s.worldState!.clueStates[c.id]?.discovered)
 })
 
-function moveNpc() {
-  if (!moveNpcId.value || !moveLocationId.value) return
-  s.doMoveNpc(moveNpcId.value, moveLocationId.value)
-  moveNpcId.value = ''
-  moveLocationId.value = ''
+function obtainClue() {
+  if (!obtainClueId.value || !obtainClueNpcId.value) return
+  s.doObtainClueFromActor(obtainClueId.value, obtainClueNpcId.value, obtainToActorId.value || undefined)
+  obtainClueId.value = ''
 }
 
-// --- Visit location ---
-const visitLocationId = ref('')
+// --- Move actor ---
+const moveActorId = ref('')
+const moveLocationId = ref('')
 
-function visitLocation() {
-  if (!visitLocationId.value) return
-  s.doVisitLocation(visitLocationId.value)
-  visitLocationId.value = ''
+function moveActor() {
+  if (!moveActorId.value || !moveLocationId.value) return
+  s.doMoveActor(moveActorId.value, moveLocationId.value)
+  moveActorId.value = ''
+  moveLocationId.value = ''
 }
 
 // --- Fire event ---
@@ -67,24 +105,24 @@ function fireEvent() {
   fireEventId.value = ''
 }
 
-// --- Kill NPC ---
-const killNpcId = ref('')
+// --- Kill actor ---
+const killActorId = ref('')
 
-function killNpc() {
-  if (!killNpcId.value) return
-  if (confirm('このNPCを死亡させますか？')) {
-    s.doKillNpc(killNpcId.value)
-    killNpcId.value = ''
+function killActor() {
+  if (!killActorId.value) return
+  if (confirm('このアクターを死亡させますか？')) {
+    s.doKillActor(killActorId.value)
+    killActorId.value = ''
   }
 }
 
-// --- NPC knowledge ---
-const knowledgeNpcId = ref('')
+// --- Actor knowledge ---
+const knowledgeActorId = ref('')
 const knowledgeText = ref('')
 
 function addKnowledge() {
-  if (!knowledgeNpcId.value || !knowledgeText.value.trim()) return
-  s.doAddNpcKnowledge(knowledgeNpcId.value, knowledgeText.value.trim())
+  if (!knowledgeActorId.value || !knowledgeText.value.trim()) return
+  s.doAddActorKnowledge(knowledgeActorId.value, knowledgeText.value.trim())
   knowledgeText.value = ''
 }
 
@@ -128,43 +166,71 @@ function setFlag() {
         </div>
       </section>
 
-      <!-- Discover clue -->
+      <!-- Visit location (actor-specific) -->
       <section class="op-row">
-        <label class="op-label">手がかり発見</label>
+        <label class="op-label">場所訪問</label>
+        <div class="op-controls">
+          <select v-model="visitActorId">
+            <option value="">誰が...</option>
+            <option v-for="a in pcActors" :key="a.id" :value="a.id">{{ a.name }}</option>
+          </select>
+          <select v-model="visitLocationId">
+            <option value="">どこへ...</option>
+            <option v-for="l in s.scenario?.locations ?? []" :key="l.id" :value="l.id">{{ l.name }}</option>
+          </select>
+          <button @click="visitLocation" :disabled="!visitLocationId || !visitActorId">訪問</button>
+        </div>
+      </section>
+
+      <!-- Discover clue (search) -->
+      <section class="op-row">
+        <label class="op-label">手がかり発見（探索）</label>
         <div class="op-controls">
           <select v-model="selectedClueId">
-            <option value="">選択...</option>
+            <option value="">手がかり...</option>
             <option v-for="c in undiscoveredClues" :key="c.id" :value="c.id">{{ c.name }}</option>
+          </select>
+          <select v-model="discoverByActorId">
+            <option value="">(発見者)</option>
+            <option v-for="a in pcActors" :key="a.id" :value="a.id">{{ a.name }}</option>
           </select>
           <button @click="discoverClue" :disabled="!selectedClueId">発見</button>
         </div>
       </section>
 
-      <!-- Visit location -->
+      <!-- Obtain clue from NPC (conversation) -->
       <section class="op-row">
-        <label class="op-label">場所訪問</label>
+        <label class="op-label">情報入手（会話）</label>
         <div class="op-controls">
-          <select v-model="visitLocationId">
-            <option value="">選択...</option>
-            <option v-for="l in s.scenario?.locations ?? []" :key="l.id" :value="l.id">{{ l.name }}</option>
+          <select v-model="obtainClueNpcId">
+            <option value="">NPCから...</option>
+            <option v-for="a in aliveActors.filter(x => x.role !== 'pc')" :key="a.id" :value="a.id">{{ a.name }}</option>
           </select>
-          <button @click="visitLocation" :disabled="!visitLocationId">訪問</button>
+          <select v-model="obtainClueId" :disabled="!obtainClueNpcId">
+            <option value="">情報...</option>
+            <option v-for="c in conversationClues" :key="c.id" :value="c.id">{{ c.name }}</option>
+          </select>
+          <select v-model="obtainToActorId">
+            <option value="">(受領者)</option>
+            <option v-for="a in pcActors" :key="a.id" :value="a.id">{{ a.name }}</option>
+          </select>
+          <button @click="obtainClue" :disabled="!obtainClueId || !obtainClueNpcId">入手</button>
         </div>
       </section>
 
-      <!-- Move NPC -->
+      <!-- Move actor -->
       <section class="op-row">
-        <label class="op-label">NPC移動</label>
+        <label class="op-label">アクター移動</label>
         <div class="op-controls">
-          <select v-model="moveNpcId">
-            <option value="">NPC...</option>
-            <option v-for="n in aliveNpcs" :key="n.id" :value="n.id">{{ n.name }}</option>
+          <select v-model="moveActorId">
+            <option value="">誰を...</option>
+            <option v-for="a in aliveActors" :key="a.id" :value="a.id">{{ a.name }}</option>
           </select>
           <select v-model="moveLocationId">
-            <option value="">場所...</option>
+            <option value="">どこへ...</option>
             <option v-for="l in s.scenario?.locations ?? []" :key="l.id" :value="l.id">{{ l.name }}</option>
           </select>
-          <button @click="moveNpc" :disabled="!moveNpcId || !moveLocationId">移動</button>
+          <button @click="moveActor" :disabled="!moveActorId || !moveLocationId">移動</button>
         </div>
       </section>
 
@@ -174,6 +240,9 @@ function setFlag() {
         <div class="op-controls">
           <select v-model="fireEventId">
             <option value="">選択...</option>
+            <optgroup v-if="s.manualEvents.length" label="手動イベント">
+              <option v-for="e in s.manualEvents" :key="e.id" :value="e.id">{{ e.name }}</option>
+            </optgroup>
             <optgroup v-if="s.availableEvents.length" label="条件達成">
               <option v-for="e in s.availableEvents" :key="e.id" :value="e.id">{{ e.name }}</option>
             </optgroup>
@@ -185,28 +254,28 @@ function setFlag() {
         </div>
       </section>
 
-      <!-- Kill NPC -->
+      <!-- Kill actor -->
       <section class="op-row">
-        <label class="op-label">NPC死亡</label>
+        <label class="op-label">死亡</label>
         <div class="op-controls">
-          <select v-model="killNpcId">
-            <option value="">NPC...</option>
-            <option v-for="n in aliveNpcs" :key="n.id" :value="n.id">{{ n.name }}</option>
+          <select v-model="killActorId">
+            <option value="">アクター...</option>
+            <option v-for="a in aliveActors" :key="a.id" :value="a.id">{{ a.name }}</option>
           </select>
-          <button class="danger-btn" @click="killNpc" :disabled="!killNpcId">死亡</button>
+          <button class="danger-btn" @click="killActor" :disabled="!killActorId">死亡</button>
         </div>
       </section>
 
-      <!-- NPC knowledge -->
+      <!-- Actor knowledge -->
       <section class="op-row">
-        <label class="op-label">NPC知識追加</label>
+        <label class="op-label">知識追加</label>
         <div class="op-controls">
-          <select v-model="knowledgeNpcId">
-            <option value="">NPC...</option>
-            <option v-for="n in s.scenario?.npcs ?? []" :key="n.id" :value="n.id">{{ n.name }}</option>
+          <select v-model="knowledgeActorId">
+            <option value="">アクター...</option>
+            <option v-for="a in allActors" :key="a.id" :value="a.id">{{ a.name }}</option>
           </select>
           <input v-model="knowledgeText" placeholder="知識内容" @keyup.enter="addKnowledge" />
-          <button @click="addKnowledge" :disabled="!knowledgeNpcId || !knowledgeText.trim()">追加</button>
+          <button @click="addKnowledge" :disabled="!knowledgeActorId || !knowledgeText.trim()">追加</button>
         </div>
       </section>
 

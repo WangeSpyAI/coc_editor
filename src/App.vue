@@ -8,7 +8,6 @@ import NPCEditor from './components/NPCEditor.vue'
 import LocationEditor from './components/LocationEditor.vue'
 import ClueEditor from './components/ClueEditor.vue'
 import EventEditor from './components/EventEditor.vue'
-import TimelineEditor from './components/TimelineEditor.vue'
 import SessionLayout from './components/session/SessionLayout.vue'
 import './App.css'
 
@@ -36,7 +35,6 @@ function closeSidebar() {
       <LocationEditor v-else-if="scenarioStore.activeTab === 'location'" />
       <ClueEditor v-else-if="scenarioStore.activeTab === 'clue'" />
       <EventEditor v-else-if="scenarioStore.activeTab === 'event'" />
-      <TimelineEditor v-else-if="scenarioStore.activeTab === 'timeline'" />
     </main>
   </div>
   <SessionLayout v-else />

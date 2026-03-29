@@ -2,7 +2,6 @@ import type {
   Scenario,
   Effect,
   FactType,
-  CharacterStats,
 } from './scenario';
 
 // --- Fact: the core of the engine ---
@@ -17,34 +16,29 @@ export interface Fact {
   effects?: Effect[];
 }
 
-// --- Player Character ---
+// --- Actor Runtime State (PC・NPC共通) ---
 
-export interface PlayerCharacter {
-  id: string;
-  playerName: string;
-  characterName: string;
-  occupation: string;
-  stats: CharacterStats;
-  skills: Record<string, number>;
-  inventory: string[];
-  conditions: string[];
-  notes: string;
-}
-
-// --- Runtime State (derived from facts) ---
-
-export interface NpcRuntimeState {
+export interface ActorRuntimeState {
   alive: boolean;
   locationId?: string;
-  attitude?: string;
   knowledge: string[];
+  inventory: string[];
+  /** NPC: hostile/neutral/allied, PC: always 'pc' */
+  role: 'pc' | 'hostile' | 'neutral' | 'allied';
+  /** NPCの場合の追加状態 */
+  attitude?: string;
   custom: Record<string, string | number | boolean>;
 }
 
+// --- Location Runtime State ---
+
 export interface LocationRuntimeState {
-  visited: boolean;
+  /** actorId ごとの訪問記録 */
+  visitedBy: string[];
   custom: Record<string, string | number | boolean>;
 }
+
+// --- Clue Runtime State ---
 
 export interface ClueRuntimeState {
   discovered: boolean;
@@ -54,26 +48,30 @@ export interface ClueRuntimeState {
   destroyed: boolean;
 }
 
+// --- Event Runtime State ---
+
 export interface EventRuntimeState {
   occurred: boolean;
   occurredCount: number;
 }
 
+// --- World State ---
+
 export interface WorldState {
   currentTime: string;
   facts: Fact[];
-  npcStates: Record<string, NpcRuntimeState>;
+  /** PC・NPC の統合ランタイム状態 */
+  actorStates: Record<string, ActorRuntimeState>;
   locationStates: Record<string, LocationRuntimeState>;
   clueStates: Record<string, ClueRuntimeState>;
   eventStates: Record<string, EventRuntimeState>;
-  pcs: PlayerCharacter[];
   flags: Record<string, string | number | boolean>;
 }
 
-// --- Timeline Status ---
+// --- Event Status (replaces TimelineStatus) ---
 
-export interface TimelineStatus {
-  entryId: string;
+export interface EventStatus {
+  eventId: string;
   status: 'pending' | 'occurred' | 'prevented';
   preventedReason?: string;
 }

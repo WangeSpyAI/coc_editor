@@ -18,7 +18,6 @@ export function createEmptyScenario(): Scenario {
     locations: [],
     clues: [],
     events: [],
-    timeline: [],
     createdAt: now,
     updatedAt: now,
   };

@@ -1,15 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Scenario } from '../types/scenario'
-import type { GameSession, PlayerCharacter, TimelineStatus } from '../types/engine'
+import type { Scenario, PCTemplate, FactType } from '../types/scenario'
+import type { GameSession, EventStatus } from '../types/engine'
 import type { ScenarioEvent } from '../types/scenario'
 import {
   createSession,
   addFact as engineAddFact,
   discoverClue as engineDiscoverClue,
-  moveNpc as engineMoveNpc,
-  killNpc as engineKillNpc,
-  addNpcKnowledge as engineAddNpcKnowledge,
+  obtainClueFromActor as engineObtainClue,
+  moveActor as engineMoveActor,
+  killActor as engineKillActor,
+  addActorKnowledge as engineAddActorKnowledge,
   visitLocation as engineVisitLocation,
   advanceTime as engineAdvanceTime,
   addPlayerCharacter as engineAddPc,
@@ -17,8 +18,7 @@ import {
   saveSession,
   loadSession,
 } from '../engine/session'
-import { getTimelineStatus, getAvailableEvents } from '../engine/world'
-import type { FactType } from '../types/scenario'
+import { getEventStatuses, getAvailableEvents, getManualEvents } from '../engine/world'
 
 export type SessionTab = 'control' | 'world' | 'operations' | 'facts' | 'timeline'
 
@@ -35,14 +35,19 @@ export const useSessionStore = defineStore('session', () => {
   const worldState = computed(() => session.value?.worldState ?? null)
   const scenario = computed(() => session.value?.scenarioSnapshot ?? null)
 
-  const timelineStatuses = computed<TimelineStatus[]>(() => {
+  const eventStatuses = computed<EventStatus[]>(() => {
     if (!scenario.value || !worldState.value) return []
-    return getTimelineStatus(scenario.value, worldState.value)
+    return getEventStatuses(scenario.value, worldState.value)
   })
 
   const availableEvents = computed<ScenarioEvent[]>(() => {
     if (!scenario.value || !worldState.value) return []
     return getAvailableEvents(scenario.value, worldState.value)
+  })
+
+  const manualEvents = computed<ScenarioEvent[]>(() => {
+    if (!scenario.value || !worldState.value) return []
+    return getManualEvents(scenario.value, worldState.value)
   })
 
   const discoveredClueCount = computed(() => {
@@ -60,6 +65,13 @@ export const useSessionStore = defineStore('session', () => {
     return [...worldState.value.facts].reverse()
   })
 
+  const pcIds = computed(() => {
+    if (!worldState.value) return []
+    return Object.entries(worldState.value.actorStates)
+      .filter(([, s]) => s.role === 'pc')
+      .map(([id]) => id)
+  })
+
   // --- Actions ---
 
   function flash(msg: string) {
@@ -74,41 +86,49 @@ export const useSessionStore = defineStore('session', () => {
     flash('セッション作成完了')
   }
 
-  function doDiscoverClue(clueId: string, pcId?: string) {
+  function doDiscoverClue(clueId: string, discoveredBy?: string) {
     if (!session.value) return
-    engineDiscoverClue(session.value, clueId, pcId)
+    engineDiscoverClue(session.value, clueId, discoveredBy)
     triggerReactivity()
     autoSave()
     flash('手がかりを発見')
   }
 
-  function doMoveNpc(npcId: string, locationId: string) {
+  function doObtainClueFromActor(clueId: string, fromActorId: string, toActorId?: string) {
     if (!session.value) return
-    engineMoveNpc(session.value, npcId, locationId)
+    engineObtainClue(session.value, clueId, fromActorId, toActorId)
     triggerReactivity()
     autoSave()
-    flash('NPCを移動')
+    flash('情報を入手')
   }
 
-  function doKillNpc(npcId: string) {
+  function doMoveActor(actorId: string, locationId: string) {
     if (!session.value) return
-    engineKillNpc(session.value, npcId)
+    engineMoveActor(session.value, actorId, locationId)
     triggerReactivity()
     autoSave()
-    flash('NPCが死亡')
+    flash('移動完了')
   }
 
-  function doAddNpcKnowledge(npcId: string, knowledge: string) {
+  function doKillActor(actorId: string) {
     if (!session.value) return
-    engineAddNpcKnowledge(session.value, npcId, knowledge)
+    engineKillActor(session.value, actorId)
     triggerReactivity()
     autoSave()
-    flash('NPC知識追加')
+    flash('死亡')
   }
 
-  function doVisitLocation(locationId: string) {
+  function doAddActorKnowledge(actorId: string, knowledge: string) {
     if (!session.value) return
-    engineVisitLocation(session.value, locationId)
+    engineAddActorKnowledge(session.value, actorId, knowledge)
+    triggerReactivity()
+    autoSave()
+    flash('知識追加')
+  }
+
+  function doVisitLocation(locationId: string, actorId: string) {
+    if (!session.value) return
+    engineVisitLocation(session.value, locationId, actorId)
     triggerReactivity()
     autoSave()
     flash('場所を訪問')
@@ -141,7 +161,7 @@ export const useSessionStore = defineStore('session', () => {
     triggerReactivity()
     autoSave()
     const msgs: string[] = [`時間を「${newTime}」に進行`]
-    if (result.facts.length) msgs.push(`${result.facts.length}件のタイムラインイベント発生`)
+    if (result.facts.length) msgs.push(`${result.facts.length}件のイベント発生`)
     if (result.prevented.length) msgs.push(`${result.prevented.length}件が阻止された`)
     flash(msgs.join(' / '))
   }
@@ -173,7 +193,7 @@ export const useSessionStore = defineStore('session', () => {
     flash(`フラグ設定: ${flag}`)
   }
 
-  function doAddPc(pc: PlayerCharacter) {
+  function doAddPc(pc: PCTemplate) {
     if (!session.value) return
     engineAddPc(session.value, pc)
     triggerReactivity()
@@ -187,7 +207,6 @@ export const useSessionStore = defineStore('session', () => {
     autoSave()
   }
 
-  // Force Vue reactivity to pick up deep mutations
   function triggerReactivity() {
     session.value = { ...session.value! }
   }
@@ -252,16 +271,19 @@ export const useSessionStore = defineStore('session', () => {
     lastActionMessage,
     worldState,
     scenario,
-    timelineStatuses,
+    eventStatuses,
     availableEvents,
+    manualEvents,
     discoveredClueCount,
     totalClueCount,
     factsByTime,
+    pcIds,
     createNewSession,
     doDiscoverClue,
-    doMoveNpc,
-    doKillNpc,
-    doAddNpcKnowledge,
+    doObtainClueFromActor,
+    doMoveActor,
+    doKillActor,
+    doAddActorKnowledge,
     doVisitLocation,
     doFireEvent,
     doAdvanceTime,

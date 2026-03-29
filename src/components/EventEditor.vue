@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useScenarioStore } from '../store/scenario'
-import type { ScenarioEvent } from '../types/scenario'
+import type { ScenarioEvent, TriggerType } from '../types/scenario'
 
 const store = useScenarioStore()
 
@@ -20,6 +20,12 @@ function handleDelete() {
     store.deleteEvent(event.value.id)
   }
 }
+
+const triggerTypeLabels: Record<TriggerType, string> = {
+  manual: '手動（KPが発火）',
+  time: '時刻トリガー',
+  condition: '条件トリガー',
+}
 </script>
 
 <template>
@@ -36,18 +42,20 @@ function handleDelete() {
     </label>
 
     <label class="form-full">
-      トリガー条件
-      <textarea rows="2" :value="event.trigger" @input="update({ trigger: ($event.target as HTMLTextAreaElement).value })" />
+      トリガー種別
+      <select :value="event.triggerType" @change="update({ triggerType: ($event.target as HTMLSelectElement).value as TriggerType })">
+        <option v-for="(label, key) in triggerTypeLabels" :key="key" :value="key">{{ label }}</option>
+      </select>
+    </label>
+
+    <label v-if="event.triggerType === 'time'" class="form-full">
+      発生時刻
+      <input :value="event.triggerTime ?? ''" @input="update({ triggerTime: ($event.target as HTMLInputElement).value || undefined })" placeholder="例: Day1 夜" />
     </label>
 
     <label class="form-full">
       説明
       <textarea rows="4" :value="event.description" @input="update({ description: ($event.target as HTMLTextAreaElement).value })" />
-    </label>
-
-    <label class="form-full">
-      結果・影響
-      <textarea rows="3" :value="event.outcome" @input="update({ outcome: ($event.target as HTMLTextAreaElement).value })" />
     </label>
 
     <label class="form-full">

@@ -1,5 +1,5 @@
-import type { Scenario } from '../types/scenario';
-import type { GameSession, Fact, PlayerCharacter } from '../types/engine';
+import type { Scenario, PCTemplate } from '../types/scenario';
+import type { GameSession, Fact } from '../types/engine';
 import { generateId } from '../utils/id';
 import { initializeWorldState } from './world';
 import { applyEffects } from './effects';
@@ -10,7 +10,6 @@ import { evaluateCondition } from './conditions';
  */
 export function createSession(scenario: Scenario, name: string): GameSession {
   const now = new Date().toISOString();
-  // JSON round-trip to strip Vue reactive proxies (structuredClone fails on Proxy)
   const snapshot = JSON.parse(JSON.stringify(scenario)) as Scenario;
   return {
     id: generateId(),
@@ -35,7 +34,6 @@ export function addFact(session: GameSession, fact: Omit<Fact, 'id' | 'recordedA
 
   session.worldState.facts.push(fullFact);
 
-  // Apply effects if the fact carries them
   if (fullFact.effects) {
     applyEffects(fullFact.effects, session.worldState, fullFact.timestamp);
   }
@@ -57,72 +55,96 @@ export function recordPcAction(session: GameSession, description: string, entity
 }
 
 /**
- * Record a clue discovery.
+ * Discover a clue.
  */
-export function discoverClue(session: GameSession, clueId: string, pcId?: string): Fact {
+export function discoverClue(session: GameSession, clueId: string, discoveredBy?: string): Fact {
   const clueState = session.worldState.clueStates[clueId];
   if (clueState) {
     clueState.discovered = true;
-    clueState.discoveredBy = pcId;
+    clueState.discoveredBy = discoveredBy;
   }
   return addFact(session, {
     timestamp: session.worldState.currentTime,
     factType: 'discovery',
     description: '手がかりを発見した',
-    relatedEntityIds: [clueId, ...(pcId ? [pcId] : [])],
+    relatedEntityIds: [clueId, ...(discoveredBy ? [discoveredBy] : [])],
   });
 }
 
 /**
- * Transfer knowledge to an NPC.
+ * Obtain a clue from an NPC (conversation-based).
  */
-export function addNpcKnowledge(session: GameSession, npcId: string, knowledge: string): Fact {
-  const npcState = session.worldState.npcStates[npcId];
-  if (npcState && !npcState.knowledge.includes(knowledge)) {
-    npcState.knowledge.push(knowledge);
+export function obtainClueFromActor(session: GameSession, clueId: string, fromActorId: string, toActorId?: string): Fact {
+  const clueState = session.worldState.clueStates[clueId];
+  if (clueState) {
+    clueState.discovered = true;
+    clueState.discoveredBy = toActorId;
+    // Remove from holder
+    if (clueState.holderId === fromActorId) {
+      clueState.holderId = toActorId;
+    }
+  }
+  return addFact(session, {
+    timestamp: session.worldState.currentTime,
+    factType: 'discovery',
+    description: '情報を入手した',
+    relatedEntityIds: [clueId, fromActorId, ...(toActorId ? [toActorId] : [])],
+  });
+}
+
+/**
+ * Transfer knowledge to an actor (PC or NPC).
+ */
+export function addActorKnowledge(session: GameSession, actorId: string, knowledge: string): Fact {
+  const actorState = session.worldState.actorStates[actorId];
+  if (actorState && !actorState.knowledge.includes(knowledge)) {
+    actorState.knowledge.push(knowledge);
   }
   return addFact(session, {
     timestamp: session.worldState.currentTime,
     factType: 'knowledge_transfer',
-    description: `NPC が "${knowledge}" を知った`,
-    relatedEntityIds: [npcId],
+    description: `"${knowledge}" を知った`,
+    relatedEntityIds: [actorId],
   });
 }
 
 /**
- * Advance the world time and evaluate timeline entries.
+ * Advance the world time and evaluate time-triggered events.
  */
 export function advanceTime(session: GameSession, newTime: string): { facts: Fact[]; prevented: string[] } {
   session.worldState.currentTime = newTime;
   const resultFacts: Fact[] = [];
   const prevented: string[] = [];
 
-  // Process timeline entries up to and including the new time
-  // (simplified: process all pending entries whose time matches)
   const scenario = session.scenarioSnapshot;
-  for (const entry of scenario.timeline) {
-    if (entry.time !== newTime) continue;
+  for (const evt of scenario.events) {
+    // Only process time-triggered events
+    if (evt.triggerType !== 'time' || evt.triggerTime !== newTime) continue;
 
-    const alreadyOccurred = session.worldState.facts.some(
-      (f) => f.factType === 'timeline_event' && f.relatedEntityIds.includes(entry.id)
-    );
-    if (alreadyOccurred) continue;
+    const alreadyOccurred = session.worldState.eventStates[evt.id]?.occurred;
+    if (alreadyOccurred && !evt.isRepeatable) continue;
 
     // Check prevention
-    if (entry.preventedBy) {
-      if (evaluateCondition(entry.preventedBy, session.worldState)) {
-        prevented.push(entry.id);
+    if (evt.preventedBy) {
+      if (evaluateCondition(evt.preventedBy, session.worldState)) {
+        prevented.push(evt.id);
         continue;
       }
     }
 
-    // Execute timeline entry
+    // Execute event
+    const evtState = session.worldState.eventStates[evt.id];
+    if (evtState) {
+      evtState.occurred = true;
+      evtState.occurredCount++;
+    }
+
     const fact = addFact(session, {
       timestamp: newTime,
       factType: 'timeline_event',
-      description: entry.description,
-      relatedEntityIds: [entry.id],
-      effects: entry.effects,
+      description: evt.description,
+      relatedEntityIds: [evt.id],
+      effects: evt.effects,
     });
     resultFacts.push(fact);
   }
@@ -131,58 +153,67 @@ export function advanceTime(session: GameSession, newTime: string): { facts: Fac
 }
 
 /**
- * Add a player character to the session.
+ * Add a PC to the session.
  */
-export function addPlayerCharacter(session: GameSession, pc: PlayerCharacter): void {
-  session.worldState.pcs.push(pc);
+export function addPlayerCharacter(session: GameSession, pc: PCTemplate): void {
+  session.worldState.actorStates[pc.id] = {
+    alive: true,
+    locationId: pc.initialLocationId,
+    knowledge: [...pc.initialKnowledge],
+    inventory: [...pc.inventory],
+    role: 'pc',
+    custom: {},
+  };
 }
 
 /**
- * Remove a player character from the session.
+ * Remove a PC from the session.
  */
 export function removePlayerCharacter(session: GameSession, pcId: string): void {
-  session.worldState.pcs = session.worldState.pcs.filter((p) => p.id !== pcId);
+  delete session.worldState.actorStates[pcId];
 }
 
 /**
- * Set an NPC as dead.
+ * Move an actor (PC or NPC) to a location.
  */
-export function killNpc(session: GameSession, npcId: string): Fact {
-  const npcState = session.worldState.npcStates[npcId];
-  if (npcState) npcState.alive = false;
+export function moveActor(session: GameSession, actorId: string, locationId: string): Fact {
+  const actorState = session.worldState.actorStates[actorId];
+  if (actorState) actorState.locationId = locationId;
+  return addFact(session, {
+    timestamp: session.worldState.currentTime,
+    factType: actorState?.role === 'pc' ? 'pc_action' : 'npc_action',
+    description: '移動した',
+    relatedEntityIds: [actorId, locationId],
+  });
+}
+
+/**
+ * Set an actor as dead.
+ */
+export function killActor(session: GameSession, actorId: string): Fact {
+  const actorState = session.worldState.actorStates[actorId];
+  if (actorState) actorState.alive = false;
   return addFact(session, {
     timestamp: session.worldState.currentTime,
     factType: 'state_change',
-    description: 'NPC が死亡した',
-    relatedEntityIds: [npcId],
+    description: '死亡した',
+    relatedEntityIds: [actorId],
   });
 }
 
 /**
- * Move an NPC to a location.
+ * Visit a location (records which actor visited).
  */
-export function moveNpc(session: GameSession, npcId: string, locationId: string): Fact {
-  const npcState = session.worldState.npcStates[npcId];
-  if (npcState) npcState.locationId = locationId;
-  return addFact(session, {
-    timestamp: session.worldState.currentTime,
-    factType: 'npc_action',
-    description: 'NPC が移動した',
-    relatedEntityIds: [npcId, locationId],
-  });
-}
-
-/**
- * Mark a location as visited.
- */
-export function visitLocation(session: GameSession, locationId: string): Fact {
+export function visitLocation(session: GameSession, locationId: string, actorId: string): Fact {
   const locState = session.worldState.locationStates[locationId];
-  if (locState) locState.visited = true;
+  if (locState && !locState.visitedBy.includes(actorId)) {
+    locState.visitedBy.push(actorId);
+  }
   return addFact(session, {
     timestamp: session.worldState.currentTime,
     factType: 'pc_action',
     description: '場所を訪れた',
-    relatedEntityIds: [locationId],
+    relatedEntityIds: [locationId, actorId],
   });
 }
 

@@ -1,10 +1,10 @@
 import type { Effect } from '../types/scenario';
-import type { WorldState, Fact } from '../types/engine';
+import type { WorldState, Fact, ActorRuntimeState } from '../types/engine';
 import { generateId } from '../utils/id';
 import { rollDice } from './dice';
 
 /**
- * Apply a list of effects to the world state, producing a new state and log entries.
+ * Apply a list of effects to the world state.
  * WorldState is mutated in place for performance.
  */
 export function applyEffects(
@@ -32,17 +32,31 @@ function applyEffect(effect: Effect, state: WorldState, timestamp: string): Fact
       return makeFact(timestamp, 'state_change', `フラグ "${effect.flag}" を ${effect.value} に設定`, []);
 
     case 'setNpcState': {
-      const npc = ensureNpcState(state, effect.npcId);
-      npc.custom[effect.field] = effect.value;
+      const actor = ensureActorState(state, effect.npcId);
+      actor.custom[effect.field] = effect.value;
       return makeFact(timestamp, 'state_change', `NPC の ${effect.field} を ${effect.value} に変更`, [effect.npcId]);
     }
 
     case 'addNpcKnowledge': {
-      const npc = ensureNpcState(state, effect.npcId);
-      if (!npc.knowledge.includes(effect.knowledge)) {
-        npc.knowledge.push(effect.knowledge);
+      const actor = ensureActorState(state, effect.npcId);
+      if (!actor.knowledge.includes(effect.knowledge)) {
+        actor.knowledge.push(effect.knowledge);
       }
       return makeFact(timestamp, 'knowledge_transfer', `NPC が "${effect.knowledge}" を知った`, [effect.npcId]);
+    }
+
+    case 'addActorKnowledge': {
+      const actor = ensureActorState(state, effect.actorId);
+      if (!actor.knowledge.includes(effect.knowledge)) {
+        actor.knowledge.push(effect.knowledge);
+      }
+      return makeFact(timestamp, 'knowledge_transfer', `"${effect.knowledge}" を知った`, [effect.actorId]);
+    }
+
+    case 'moveActor': {
+      const actor = ensureActorState(state, effect.actorId);
+      actor.locationId = effect.locationId;
+      return makeFact(timestamp, 'state_change', `移動した`, [effect.actorId, effect.locationId]);
     }
 
     case 'setClueLocation': {
@@ -50,6 +64,13 @@ function applyEffect(effect: Effect, state: WorldState, timestamp: string): Fact
       clue.locationId = effect.locationId;
       clue.holderId = effect.holderId;
       return makeFact(timestamp, 'state_change', `手がかりの所在が変更された`, [effect.clueId]);
+    }
+
+    case 'transferClue': {
+      const clue = ensureClueState(state, effect.clueId);
+      clue.holderId = effect.toId;
+      clue.locationId = undefined;
+      return makeFact(timestamp, 'state_change', `手がかりが移転された`, [effect.clueId, effect.fromId, effect.toId]);
     }
 
     case 'destroyClue': {
@@ -69,33 +90,35 @@ function applyEffect(effect: Effect, state: WorldState, timestamp: string): Fact
 
     case 'hpChange': {
       const amount = resolveAmount(effect.amount);
-      const pc = state.pcs.find((p) => p.id === effect.targetId);
-      if (pc) {
-        pc.stats.hp = Math.max(0, pc.stats.hp + amount);
+      const actor = state.actorStates[effect.targetId];
+      if (actor) {
+        const hp = (actor.custom['hp'] as number) ?? 0;
+        actor.custom['hp'] = Math.max(0, hp + amount);
       }
       return makeFact(timestamp, 'state_change', `HP が ${amount > 0 ? '+' : ''}${amount} 変化`, [effect.targetId]);
     }
 
     case 'mpChange': {
       const amount = resolveAmount(effect.amount);
-      const pc = state.pcs.find((p) => p.id === effect.targetId);
-      if (pc) {
-        pc.stats.mp = Math.max(0, pc.stats.mp + amount);
+      const actor = state.actorStates[effect.targetId];
+      if (actor) {
+        const mp = (actor.custom['mp'] as number) ?? 0;
+        actor.custom['mp'] = Math.max(0, mp + amount);
       }
       return makeFact(timestamp, 'state_change', `MP が ${amount > 0 ? '+' : ''}${amount} 変化`, [effect.targetId]);
     }
 
     case 'addItem': {
-      const pc = state.pcs.find((p) => p.id === effect.targetId);
-      if (pc) pc.inventory.push(effect.item);
+      const actor = state.actorStates[effect.targetId];
+      if (actor) actor.inventory.push(effect.item);
       return makeFact(timestamp, 'state_change', `"${effect.item}" を入手`, [effect.targetId]);
     }
 
     case 'removeItem': {
-      const pc = state.pcs.find((p) => p.id === effect.targetId);
-      if (pc) {
-        const idx = pc.inventory.indexOf(effect.item);
-        if (idx !== -1) pc.inventory.splice(idx, 1);
+      const actor = state.actorStates[effect.targetId];
+      if (actor) {
+        const idx = actor.inventory.indexOf(effect.item);
+        if (idx !== -1) actor.inventory.splice(idx, 1);
       }
       return makeFact(timestamp, 'state_change', `"${effect.item}" を失った`, [effect.targetId]);
     }
@@ -130,11 +153,11 @@ function makeFact(timestamp: string, factType: Fact['factType'], description: st
   };
 }
 
-function ensureNpcState(state: WorldState, npcId: string) {
-  if (!state.npcStates[npcId]) {
-    state.npcStates[npcId] = { alive: true, knowledge: [], custom: {} };
+function ensureActorState(state: WorldState, actorId: string): ActorRuntimeState {
+  if (!state.actorStates[actorId]) {
+    state.actorStates[actorId] = { alive: true, knowledge: [], inventory: [], role: 'neutral', custom: {} };
   }
-  return state.npcStates[npcId];
+  return state.actorStates[actorId];
 }
 
 function ensureClueState(state: WorldState, clueId: string) {
@@ -146,7 +169,7 @@ function ensureClueState(state: WorldState, clueId: string) {
 
 function ensureLocationState(state: WorldState, locationId: string) {
   if (!state.locationStates[locationId]) {
-    state.locationStates[locationId] = { visited: false, custom: {} };
+    state.locationStates[locationId] = { visitedBy: [], custom: {} };
   }
   return state.locationStates[locationId];
 }

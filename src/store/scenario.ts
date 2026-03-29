@@ -6,7 +6,6 @@ import type {
   Location,
   Clue,
   ScenarioEvent,
-  TimelineEntry,
   ScenarioElementType,
 } from '../types/scenario'
 import { createEmptyScenario } from '../utils/scenario'
@@ -50,6 +49,7 @@ export const useScenarioStore = defineStore('scenario', () => {
       id: generateId(),
       name: '新規NPC',
       description: '',
+      allegiance: 'neutral',
       traits: [],
       relations: [],
       initialKnowledge: [],
@@ -134,14 +134,13 @@ export const useScenarioStore = defineStore('scenario', () => {
     touch()
   }
 
-  // Event
+  // Event (unified: condition/time/manual)
   function addEvent() {
     const evt: ScenarioEvent = {
       id: generateId(),
       name: '新規イベント',
-      trigger: '',
+      triggerType: 'manual',
       description: '',
-      outcome: '',
       notes: '',
     }
     scenario.value.events.push(evt)
@@ -159,33 +158,6 @@ export const useScenarioStore = defineStore('scenario', () => {
 
   function deleteEvent(id: string) {
     scenario.value.events = scenario.value.events.filter((e) => e.id !== id)
-    if (selectedElement.value?.id === id) selectedElement.value = null
-    touch()
-  }
-
-  // Timeline
-  function addTimelineEntry() {
-    const entry: TimelineEntry = {
-      id: generateId(),
-      time: '',
-      description: '',
-      notes: '',
-    }
-    scenario.value.timeline.push(entry)
-    selectedElement.value = { type: 'timeline', id: entry.id }
-    touch()
-  }
-
-  function updateTimelineEntry(entry: TimelineEntry) {
-    const idx = scenario.value.timeline.findIndex((t) => t.id === entry.id)
-    if (idx !== -1) {
-      scenario.value.timeline[idx] = entry
-      touch()
-    }
-  }
-
-  function deleteTimelineEntry(id: string) {
-    scenario.value.timeline = scenario.value.timeline.filter((t) => t.id !== id)
     if (selectedElement.value?.id === id) selectedElement.value = null
     touch()
   }
@@ -215,9 +187,6 @@ export const useScenarioStore = defineStore('scenario', () => {
     addEvent,
     updateEvent,
     deleteEvent,
-    addTimelineEntry,
-    updateTimelineEntry,
-    deleteTimelineEntry,
     markSaved,
   }
 })

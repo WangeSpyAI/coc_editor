@@ -36,32 +36,50 @@ export function evaluateCondition(condition: Condition, state: WorldState): bool
     }
 
     case 'npcAlive':
-      return state.npcStates[condition.npcId]?.alive !== false;
+      return state.actorStates[condition.npcId]?.alive !== false;
 
     case 'npcAt':
-      return state.npcStates[condition.npcId]?.locationId === condition.locationId;
+      return state.actorStates[condition.npcId]?.locationId === condition.locationId;
 
     case 'npcKnows':
-      return state.npcStates[condition.npcId]?.knowledge.includes(condition.knowledge) === true;
+      return state.actorStates[condition.npcId]?.knowledge.includes(condition.knowledge) === true;
 
-    case 'locationVisited':
-      return state.locationStates[condition.locationId]?.visited === true;
+    case 'actorAt':
+      return state.actorStates[condition.actorId]?.locationId === condition.locationId;
+
+    case 'actorKnows':
+      return state.actorStates[condition.actorId]?.knowledge.includes(condition.knowledge) === true;
+
+    case 'actorHasItem':
+      return state.actorStates[condition.actorId]?.inventory.includes(condition.item) === true;
+
+    case 'locationVisited': {
+      const loc = state.locationStates[condition.locationId];
+      return loc ? loc.visitedBy.length > 0 : false;
+    }
+
+    case 'locationVisitedBy': {
+      const loc = state.locationStates[condition.locationId];
+      return loc ? loc.visitedBy.includes(condition.actorId) : false;
+    }
 
     case 'eventOccurred':
       return state.eventStates[condition.eventId]?.occurred === true;
 
     case 'pcHasItem':
-      return state.pcs.some((pc) => pc.inventory.includes(condition.item));
+      return Object.values(state.actorStates)
+        .filter((a) => a.role === 'pc')
+        .some((a) => a.inventory.includes(condition.item));
 
     case 'pcStat': {
-      const pc = state.pcs.find((p) => p.id === condition.pcId);
-      if (!pc) return false;
-      const stat = pc.stats[condition.stat as keyof typeof pc.stats];
-      if (typeof stat !== 'number') return false;
+      const actor = state.actorStates[condition.pcId];
+      if (!actor || actor.role !== 'pc') return false;
+      const statVal = actor.custom[condition.stat];
+      if (typeof statVal !== 'number') return false;
       switch (condition.operator) {
-        case '>=': return stat >= condition.value;
-        case '<=': return stat <= condition.value;
-        case '==': return stat === condition.value;
+        case '>=': return statVal >= condition.value;
+        case '<=': return statVal <= condition.value;
+        case '==': return statVal === condition.value;
         default: return false;
       }
     }
@@ -73,6 +91,9 @@ export function evaluateCondition(condition: Condition, state: WorldState): bool
         if (condition.entityId && !f.relatedEntityIds.includes(condition.entityId)) return false;
         return true;
       });
+
+    case 'timeReached':
+      return state.currentTime === condition.time;
 
     case 'and':
       return condition.conditions.every((c) => evaluateCondition(c, state));

@@ -104,7 +104,6 @@ function handleImport() {
       <span>場所: {{ store.scenario.locations.length }}</span>
       <span>手がかり: {{ store.scenario.clues.length }}</span>
       <span>イベント: {{ store.scenario.events.length }}</span>
-      <span>タイムライン: {{ store.scenario.timeline.length }}</span>
     </div>
   </div>
 </template>
