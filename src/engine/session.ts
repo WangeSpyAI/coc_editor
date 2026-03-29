@@ -10,12 +10,14 @@ import { evaluateCondition } from './conditions';
  */
 export function createSession(scenario: Scenario, name: string): GameSession {
   const now = new Date().toISOString();
+  // JSON round-trip to strip Vue reactive proxies (structuredClone fails on Proxy)
+  const snapshot = JSON.parse(JSON.stringify(scenario)) as Scenario;
   return {
     id: generateId(),
     name,
     scenarioId: scenario.id,
-    scenarioSnapshot: structuredClone(scenario),
-    worldState: initializeWorldState(scenario),
+    scenarioSnapshot: snapshot,
+    worldState: initializeWorldState(snapshot),
     createdAt: now,
     updatedAt: now,
   };

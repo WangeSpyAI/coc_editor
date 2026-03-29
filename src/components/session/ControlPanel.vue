@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useSessionStore } from '../../store/session'
 import { useScenarioStore } from '../../store/scenario'
 
@@ -9,9 +9,19 @@ const scenarioStore = useScenarioStore()
 const newSessionName = ref('セッション 1')
 const savedSessions = ref(sessionStore.getSavedSessions())
 
+const scenarioIsEmpty = computed(() => {
+  const s = scenarioStore.scenario
+  return s.npcs.length === 0 && s.locations.length === 0 && s.clues.length === 0
+})
+
 function handleCreate() {
   if (!newSessionName.value.trim()) return
+  if (scenarioIsEmpty.value) {
+    alert('シナリオにデータがありません。\nエディタモードに戻り、「サンプル読込」でデータを入れてから作成してください。')
+    return
+  }
   sessionStore.createNewSession(scenarioStore.scenario, newSessionName.value.trim())
+  savedSessions.value = sessionStore.getSavedSessions()
 }
 
 function handleLoad(id: string) {
@@ -65,15 +75,35 @@ function refreshList() {
 
 <template>
   <div class="session-panel control-panel">
+    <!-- Active session info -->
+    <section v-if="sessionStore.session" class="panel-section active-session-box">
+      <h3>現在のセッション</h3>
+      <div class="active-session-info">
+        <div><strong>{{ sessionStore.session.name }}</strong></div>
+        <div class="saved-meta">シナリオ: {{ sessionStore.scenario?.title }}</div>
+        <div class="saved-meta">現在時刻: {{ sessionStore.worldState?.currentTime || '(未設定)' }}</div>
+        <div class="saved-meta">
+          ファクト数: {{ sessionStore.worldState?.facts.length ?? 0 }}件
+          ・手がかり: {{ sessionStore.discoveredClueCount }}/{{ sessionStore.totalClueCount }}
+        </div>
+      </div>
+      <p class="hint">→ 「操作」タブでセッションを進行できます</p>
+    </section>
+
+    <!-- New session -->
     <section class="panel-section">
       <h3>新規セッション</h3>
-      <p class="hint">現在のシナリオ「{{ scenarioStore.scenario.title }}」からセッションを作成</p>
+      <p v-if="scenarioIsEmpty" class="hint warning-hint">
+        シナリオが空です。エディタに戻り、概要画面の「サンプル読込」でデータを入れてください。
+      </p>
+      <p v-else class="hint">シナリオ「{{ scenarioStore.scenario.title }}」からセッションを作成</p>
       <div class="inline-form">
         <input v-model="newSessionName" placeholder="セッション名" />
-        <button class="primary-btn" @click="handleCreate">作成</button>
+        <button class="primary-btn" @click="handleCreate" :disabled="scenarioIsEmpty">作成</button>
       </div>
     </section>
 
+    <!-- Saved sessions -->
     <section class="panel-section">
       <h3>
         保存済みセッション
@@ -94,6 +124,7 @@ function refreshList() {
       </ul>
     </section>
 
+    <!-- Import / Export -->
     <section class="panel-section">
       <h3>インポート / エクスポート</h3>
       <div class="inline-form">
