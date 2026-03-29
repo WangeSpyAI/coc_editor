@@ -84,6 +84,8 @@ export interface GameSession {
   scenarioId: string;
   scenarioSnapshot: Scenario;
   worldState: WorldState;
+  /** PC名の逆引き (pcId → キャラ名) */
+  pcNames: Record<string, string>;
   createdAt: string;
   updatedAt: string;
 }

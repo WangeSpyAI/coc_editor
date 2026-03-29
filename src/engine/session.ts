@@ -17,6 +17,7 @@ export function createSession(scenario: Scenario, name: string): GameSession {
     scenarioId: scenario.id,
     scenarioSnapshot: snapshot,
     worldState: initializeWorldState(snapshot),
+    pcNames: {},
     createdAt: now,
     updatedAt: now,
   };
@@ -164,6 +165,7 @@ export function addPlayerCharacter(session: GameSession, pc: PCTemplate): void {
     role: 'pc',
     custom: {},
   };
+  session.pcNames[pc.id] = pc.name;
 }
 
 /**
@@ -171,6 +173,7 @@ export function addPlayerCharacter(session: GameSession, pc: PCTemplate): void {
  */
 export function removePlayerCharacter(session: GameSession, pcId: string): void {
   delete session.worldState.actorStates[pcId];
+  delete session.pcNames[pcId];
 }
 
 /**
@@ -228,5 +231,10 @@ export function saveSession(session: GameSession): string {
  * Deserialize session from JSON.
  */
 export function loadSession(json: string): GameSession {
-  return JSON.parse(json) as GameSession;
+  const session = JSON.parse(json) as GameSession;
+  // Backward compatibility: ensure pcNames exists
+  if (!session.pcNames) {
+    session.pcNames = {};
+  }
+  return session;
 }
