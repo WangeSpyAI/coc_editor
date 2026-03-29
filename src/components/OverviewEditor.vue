@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useScenarioStore } from '../store/scenario'
 import { exportScenario, importScenario } from '../utils/scenario'
+import { createSampleScenario } from '../utils/sampleScenario'
 
 const store = useScenarioStore()
 
@@ -17,6 +18,12 @@ function handleExport() {
   a.download = `${store.scenario.title}.json`
   a.click()
   URL.revokeObjectURL(url)
+}
+
+function handleLoadSample() {
+  if (confirm('サンプルシナリオ「悪夢の館」を読み込みますか？\n現在の内容は上書きされます。')) {
+    store.setScenario(createSampleScenario())
+  }
 }
 
 function handleImport() {
@@ -46,6 +53,7 @@ function handleImport() {
     <div class="editor-header">
       <h2>シナリオ概要</h2>
       <div class="editor-actions">
+        <button @click="handleLoadSample">サンプル読込</button>
         <button @click="handleImport">インポート</button>
         <button @click="handleExport">エクスポート</button>
       </div>
