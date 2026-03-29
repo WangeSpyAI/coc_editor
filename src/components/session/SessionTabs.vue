@@ -18,7 +18,6 @@ const tabs: { key: SessionTab; label: string }[] = [
       v-for="tab in tabs"
       :key="tab.key"
       :class="['session-tab-btn', { active: sessionStore.activeTab === tab.key }]"
-      :disabled="!sessionStore.session && tab.key !== 'control'"
       @click="sessionStore.setActiveTab(tab.key)"
     >
       {{ tab.label }}
