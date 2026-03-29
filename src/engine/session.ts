@@ -166,6 +166,14 @@ export function addPlayerCharacter(session: GameSession, pc: PCTemplate): void {
     custom: {},
   };
   session.pcNames[pc.id] = pc.name;
+
+  // Record initial location visit
+  if (pc.initialLocationId) {
+    const locState = session.worldState.locationStates[pc.initialLocationId];
+    if (locState && !locState.visitedBy.includes(pc.id)) {
+      locState.visitedBy.push(pc.id);
+    }
+  }
 }
 
 /**
@@ -182,6 +190,13 @@ export function removePlayerCharacter(session: GameSession, pcId: string): void 
 export function moveActor(session: GameSession, actorId: string, locationId: string): Fact {
   const actorState = session.worldState.actorStates[actorId];
   if (actorState) actorState.locationId = locationId;
+
+  // Record location visit
+  const locState = session.worldState.locationStates[locationId];
+  if (locState && !locState.visitedBy.includes(actorId)) {
+    locState.visitedBy.push(actorId);
+  }
+
   return addFact(session, {
     timestamp: session.worldState.currentTime,
     factType: actorState?.role === 'pc' ? 'pc_action' : 'npc_action',

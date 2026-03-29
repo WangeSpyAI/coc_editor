@@ -32,7 +32,11 @@ export function initializeWorldState(scenario: Scenario): WorldState {
 
   const locationStates: Record<string, WorldState['locationStates'][string]> = {};
   for (const loc of scenario.locations) {
-    locationStates[loc.id] = { visitedBy: [], custom: {} };
+    // NPCs present at this location from the start
+    const npcsHere = scenario.npcs
+      .filter((n) => n.initialLocationId === loc.id)
+      .map((n) => n.id);
+    locationStates[loc.id] = { visitedBy: npcsHere, custom: {} };
   }
 
   const eventStates: Record<string, WorldState['eventStates'][string]> = {};
