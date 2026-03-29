@@ -8,6 +8,12 @@
             "command": "cd /home/user/coc_editor && if git diff --quiet && git diff --cached --quiet && [ -z \"$(git ls-files --others --exclude-standard)\" ]; then echo '{\"decision\":\"allow\"}'; exit 0; fi && npm test 2>&1 && npm run build 2>&1 && echo '{\"decision\":\"allow\"}' || echo '{\"stopReason\":\"テスト or ビルド失敗。修正してください。\",\"continue\":false}'",
             "timeout": 120,
             "statusMessage": "テスト & ビルド実行中..."
+          },
+          {
+            "type": "agent",
+            "prompt": "You are a design auditor for a CoC TRPG world simulation engine. Review the UNCOMMITTED changes in this session for fundamental design problems.\n\nRun: git diff HEAD to see what changed.\n\nCheck ONLY for these categories (ignore style, naming, formatting):\n\n1. STATE CONSISTENCY: Does any new code path mutate state (actorStates, locationStates, clueStates, eventStates) without going through the canonical primitives (placeActorAt for location, etc.)? Check with: grep -n '\\.locationId\\s*=' src/engine/ to find direct mutations.\n\n2. DUAL-WRITE INVARIANTS: If a new function updates one side of a dual-write pair (e.g., actorState.locationId without visitedBy, or clueState.discovered without discoveredBy), flag it.\n\n3. EFFECT/SESSION PARITY: If a new session.ts function is added, does a corresponding Effect type exist? If a new Effect is added, does it update all required state?\n\n4. CONDITION/QUERY DIVERGENCE: If a new condition type or world query is added, do they use consistent logic for the same concept?\n\n5. TYPE SAFETY: Are there new string-key accesses to .custom[] that should be typed fields? Are there new entity ID references that could be invalid?\n\nIf NO issues found, output: {\"decision\":\"allow\"}\nIf issues found, output: {\"stopReason\":\"設計問題: [brief description]\",\"continue\":false}\n\nBe strict but not pedantic. Only flag real design problems, not preferences.",
+            "timeout": 60,
+            "statusMessage": "設計整合性チェック中..."
           }
         ]
       }
