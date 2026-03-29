@@ -38,10 +38,24 @@ describe('applyEffects', () => {
     expect(state.flags['test']).toBe(true)
   })
 
-  it('setNpcState', () => {
+  it('setNpcState (custom field)', () => {
     const state = makeState()
     applyEffects([{ type: 'setNpcState', npcId: 'npc-a', field: 'condition', value: '瀕死' }], state, 'T1')
     expect(state.actorStates['npc-a'].custom['condition']).toBe('瀕死')
+  })
+
+  it('setNpcState (alive=falseでアクターが死亡する)', () => {
+    const state = makeState()
+    expect(state.actorStates['npc-a'].alive).toBe(true)
+    applyEffects([{ type: 'setNpcState', npcId: 'npc-a', field: 'alive', value: false }], state, 'T1')
+    expect(state.actorStates['npc-a'].alive).toBe(false)
+  })
+
+  it('setNpcState (locationIdでplaceActorAt経由で移動)', () => {
+    const state = makeState()
+    applyEffects([{ type: 'setNpcState', npcId: 'npc-a', field: 'locationId', value: 'loc-2' }], state, 'T1')
+    expect(state.actorStates['npc-a'].locationId).toBe('loc-2')
+    expect(state.locationStates['loc-2'].visitedBy).toContain('npc-a')
   })
 
   it('addNpcKnowledge', () => {
@@ -87,6 +101,8 @@ describe('applyEffects', () => {
     applyEffects([{ type: 'transferClue', clueId: 'clue-1', fromId: 'npc-a', toId: 'pc-1' }], state, 'T1')
     expect(state.clueStates['clue-1'].holderId).toBe('pc-1')
     expect(state.clueStates['clue-1'].locationId).toBeUndefined()
+    expect(state.clueStates['clue-1'].discovered).toBe(true)
+    expect(state.clueStates['clue-1'].discoveredBy).toBe('pc-1')
   })
 
   it('addItem / removeItem', () => {

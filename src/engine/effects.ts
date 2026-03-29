@@ -34,7 +34,14 @@ function applyEffect(effect: Effect, state: WorldState, timestamp: string): Fact
 
     case 'setNpcState': {
       const actor = ensureActorState(state, effect.npcId);
-      actor.custom[effect.field] = effect.value;
+      // Top-level fields must be set directly, not in custom
+      if (effect.field === 'alive' && typeof effect.value === 'boolean') {
+        actor.alive = effect.value;
+      } else if (effect.field === 'locationId' && typeof effect.value === 'string') {
+        placeActorAt(state, effect.npcId, effect.value);
+      } else {
+        actor.custom[effect.field] = effect.value;
+      }
       return makeFact(timestamp, 'state_change', `NPC の ${effect.field} を ${effect.value} に変更`, [effect.npcId]);
     }
 
@@ -71,6 +78,8 @@ function applyEffect(effect: Effect, state: WorldState, timestamp: string): Fact
       const clue = ensureClueState(state, effect.clueId);
       clue.holderId = effect.toId;
       clue.locationId = undefined;
+      clue.discovered = true;
+      clue.discoveredBy = effect.toId;
       return makeFact(timestamp, 'state_change', `手がかりが移転された`, [effect.clueId, effect.fromId, effect.toId]);
     }
 
@@ -163,7 +172,7 @@ function ensureActorState(state: WorldState, actorId: string): ActorRuntimeState
 
 function ensureClueState(state: WorldState, clueId: string) {
   if (!state.clueStates[clueId]) {
-    state.clueStates[clueId] = { discovered: false, destroyed: false };
+    state.clueStates[clueId] = { discovered: false, destroyed: false, locationId: undefined, holderId: undefined };
   }
   return state.clueStates[clueId];
 }

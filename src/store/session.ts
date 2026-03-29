@@ -138,6 +138,12 @@ export const useSessionStore = defineStore('session', () => {
     if (!session.value || !scenario.value) return
     const evt = scenario.value.events.find((e) => e.id === eventId)
     if (!evt) return
+    // Mark event as occurred BEFORE applying effects (consistent with advanceTime)
+    const evtState = session.value.worldState.eventStates[eventId]
+    if (evtState) {
+      evtState.occurred = true
+      evtState.occurredCount++
+    }
     engineAddFact(session.value, {
       timestamp: session.value.worldState.currentTime,
       factType: 'state_change',
@@ -145,11 +151,6 @@ export const useSessionStore = defineStore('session', () => {
       relatedEntityIds: [eventId],
       effects: evt.effects,
     })
-    const evtState = session.value.worldState.eventStates[eventId]
-    if (evtState) {
-      evtState.occurred = true
-      evtState.occurredCount++
-    }
     triggerReactivity()
     autoSave()
     flash(`イベント「${evt.name}」発生`)
