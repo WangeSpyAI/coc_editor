@@ -127,7 +127,7 @@ export function advanceTime(session: GameSession, newTime: string): { facts: Fac
 
     // Check prevention
     if (evt.preventedBy) {
-      if (evaluateCondition(evt.preventedBy, session.worldState)) {
+      if (evaluateCondition(evt.preventedBy, session.worldState, session.scenarioSnapshot)) {
         prevented.push(evt.id);
         continue;
       }
