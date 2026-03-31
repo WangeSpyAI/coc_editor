@@ -458,43 +458,57 @@ describe('統合フロー', () => {
     timeline.unmount()
   })
 
-  it('PC移動後にWorldDashboardの表示が更新される', async () => {
+  it('PC移動後にWorldDashboardの所在地表示が更新される', async () => {
     const sessionStore = setupSessionWithPC()
+
+    // Mount dashboard FIRST, then perform action and check DOM updates
+    const dashboard = mount(WorldDashboard)
+    await nextTick()
+
+    // Before move: PC is at 玄関ホール
+    expect(dashboard.text()).toContain('玄関ホール')
 
     // Move PC to study
     sessionStore.doMoveActor('pc-taro', 'loc-study')
+    await nextTick()
 
-    const dashboard = mount(WorldDashboard)
-    expect(sessionStore.worldState!.actorStates['pc-taro'].locationId).toBe('loc-study')
-    // visitedBy should be updated
-    expect(sessionStore.worldState!.locationStates['loc-study'].visitedBy).toContain('pc-taro')
+    // After move: DOM should show 書斎
+    expect(dashboard.text()).toContain('書斎')
 
     dashboard.unmount()
   })
 
-  it('手がかり発見後にWorldDashboardの発見数が増える', async () => {
+  it('手がかり発見後にWorldDashboardの発見数表示が更新される', async () => {
     const sessionStore = setupSessionWithPC()
 
-    const before = sessionStore.discoveredClueCount
+    const dashboard = mount(WorldDashboard)
+    await nextTick()
+
+    // Before: 0 discovered
+    expect(dashboard.text()).toContain('0/')
+
+    // Discover a clue
     sessionStore.doDiscoverClue('clue-rumors', 'pc-taro')
-    const after = sessionStore.discoveredClueCount
+    await nextTick()
 
-    expect(after).toBe(before + 1)
+    // After: 1 discovered
+    expect(dashboard.text()).toContain('1/')
 
-    // Dashboard should still render
-    const dashboard = mount(WorldDashboard)
-    expect(dashboard.exists()).toBe(true)
     dashboard.unmount()
   })
 
-  it('イベント発火後にTimelineViewの状態が更新される', async () => {
+  it('イベント発火後にTimelineViewの表示が更新される', async () => {
     const sessionStore = setupSessionWithPC()
-
-    sessionStore.doFireEvent('evt-welcome')
 
     const timeline = mount(TimelineView)
-    // The event should now show as occurred
-    expect(sessionStore.worldState!.eventStates['evt-welcome'].occurred).toBe(true)
+    await nextTick()
+
+    sessionStore.doFireEvent('evt-welcome')
+    await nextTick()
+
+    // After: event should show as occurred
+    expect(timeline.text()).toContain('発生済')
+
     timeline.unmount()
   })
 })
