@@ -65,14 +65,6 @@ export function initializeWorldState(scenario: Scenario): WorldState {
     eventStates,
     flags: {},
   };
-
-  // Set NPC initial locationId (without adding to visitedBy — NPCs aren't "visitors")
-  for (const npc of scenario.npcs) {
-    if (npc.initialLocationId && worldState.actorStates[npc.id]) {
-      worldState.actorStates[npc.id].locationId = npc.initialLocationId;
-    }
-  }
-
   return worldState;
 }
 
