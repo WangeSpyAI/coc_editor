@@ -74,16 +74,66 @@ Pure functions, no Vue/Pinia dependency. Fully testable with Vitest.
 - `dice.ts` — Dice rolling, skill checks
 - `derived.ts` — Derived stat calculation
 
+### UI Layer (`src/components/`, `src/store/`, `src/composables/`)
+Vue 3 + Pinia. Components access engine through store actions.
+
+- `store/session.ts` — Session store, wraps engine functions with reactivity + persistence
+- `store/scenario.ts` — Scenario editing store
+- `store/app.ts` — App mode switching (editor ↔ session)
+- `composables/useEntityNames.ts` — ID → human-readable name resolution
+
+### 8. Initialization vs Runtime (初期化とランタイムの区別)
+
+NPC initial placement (`initializeWorldState`) sets `locationId` directly in the actorStates initializer. It does NOT use `placeActorAt` because NPCs are not "visitors" — `visitedBy` tracks PC visits for gameplay purposes, not NPC presence.
+
+- `initializeWorldState`: direct `locationId` assignment (no visitedBy)
+- Runtime moves (effects, session actions): always through `placeActorAt` (with visitedBy)
+
+**Why**: Using `placeActorAt` during initialization caused NPCs to appear as "visited" in location cards from the start.
+
+### 9. Non-Null Assertions in Computed (computed内の非nullアサーション)
+
+Pinia store computed values may run when store state is null. Always guard before using `!` assertions:
+
+```typescript
+// BAD: crashes if worldState is null
+const aliveActors = computed(() =>
+  allActors.value.filter((a) => s.worldState!.actorStates[a.id]?.alive !== false)
+)
+
+// GOOD: guard first
+const aliveActors = computed(() => {
+  if (!s.worldState) return []
+  return allActors.value.filter((a) => s.worldState!.actorStates[a.id]?.alive !== false)
+})
+```
+
 ### Testing
-- Run: `npm test`
-- All engine functions have unit tests in `src/engine/__tests__/`
+
+#### Unit Tests (`npm test`)
+- Engine logic: `src/engine/__tests__/` (conditions, effects, session, world, consistency)
+- Component mount: `src/components/__tests__/mount.test.ts` — verifies all components mount without runtime errors
 - `consistency.test.ts` specifically tests dual-write invariants
+
+#### E2E Smoke Tests (`npm run test:e2e`)
+- Builds production bundle and starts preview server
+- Verifies HTML, JS, CSS assets are served correctly
+- Validates bundle contains expected code (createApp, pinia)
+
+#### What Tests Catch and Don't Catch
+Verified by intentional breakage experiments:
+- **Import errors**: caught by both tests and build
+- **Nonexistent fields**: caught by both tests and build  
+- **Broken template bindings**: caught by both tests and build
+- **Engine logic bugs** (e.g., missing visitedBy update): caught by tests, NOT by build
+- **Missing triggerReactivity()**: NOT caught by either — needs DOM assertion tests or real browser E2E
 
 ### Stop Hook Workflow
 On every commit attempt, the stop hook runs:
-1. `npm test` — all unit tests must pass
+1. `npm test` — unit + component mount tests must pass
 2. `npm run build` — TypeScript compilation + Vite build must succeed
-3. Agent design audit — checks for state consistency, dual-write invariants, effect/session parity, condition/query divergence, type safety
+3. `npm run test:e2e` — E2E smoke tests must pass
+4. Agent design audit — checks for state consistency, dual-write invariants, effect/session parity, condition/query divergence, type safety
 
 ## Common Pitfalls
 
@@ -91,3 +141,6 @@ On every commit attempt, the stop hook runs:
 - Adding a new location condition without using `resolveActorLocation` → inconsistent with queries
 - Putting typed state in `custom` instead of a proper field → bypasses type system
 - Setting event state after effects → timing inconsistency with condition evaluation
+- Using `placeActorAt` during initialization → NPCs incorrectly appear as visitors
+- Non-null assertions (`!`) in computed without null guard → runtime crash when store is empty
+- Forgetting `triggerReactivity()` after engine mutations → stale UI (not caught by unit tests)

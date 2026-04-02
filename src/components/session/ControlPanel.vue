@@ -19,6 +19,8 @@ const savedSessions = ref(sessionStore.getSavedSessions())
 const newPcName = ref('')
 const newPcPlayerName = ref('')
 const newPcLocationId = ref('')
+const showStats = ref(false)
+const newPcStats = ref({ str: 50, con: 50, siz: 50, dex: 50, app: 50, int: 50, pow: 50, edu: 50, hp: 10, mp: 10, san: 50 })
 
 const scenarioIsEmpty = computed(() => {
   const s = scenarioStore.scenario
@@ -61,11 +63,14 @@ function handleAddPc() {
     initialLocationId: newPcLocationId.value || undefined,
     inventory: [],
     notes: '',
+    stats: showStats.value ? { ...newPcStats.value } : undefined,
   }
   sessionStore.doAddPc(pc)
   newPcName.value = ''
   newPcPlayerName.value = ''
   newPcLocationId.value = ''
+  showStats.value = false
+  newPcStats.value = { str: 50, con: 50, siz: 50, dex: 50, app: 50, int: 50, pow: 50, edu: 50, hp: 10, mp: 10, san: 50 }
 }
 
 function handleRemovePc(pcId: string) {
@@ -165,8 +170,19 @@ function refreshList() {
             <option value="">初期場所（任意）</option>
             <option v-for="l in sessionStore.scenario?.locations ?? []" :key="l.id" :value="l.id">{{ l.name }}</option>
           </select>
-          <button class="primary-btn" @click="handleAddPc" :disabled="!newPcName.trim()">PC追加</button>
         </div>
+        <div style="margin-top:8px">
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="showStats" /> 能力値を設定
+          </label>
+        </div>
+        <div v-if="showStats" class="stats-grid" style="margin-top:8px">
+          <label v-for="key in ['str','con','siz','dex','app','int','pow','edu','hp','mp','san'] as const" :key="key">
+            {{ key.toUpperCase() }}
+            <input type="number" v-model.number="newPcStats[key]" min="0" max="99" />
+          </label>
+        </div>
+        <button class="primary-btn" style="margin-top:8px; width:100%" @click="handleAddPc" :disabled="!newPcName.trim()">PC追加</button>
       </div>
     </section>
 

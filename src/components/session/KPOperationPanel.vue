@@ -35,9 +35,10 @@ const allActors = computed(() => {
   return [...pcs, ...npcs]
 })
 
-const aliveActors = computed(() =>
-  allActors.value.filter((a) => s.worldState!.actorStates[a.id]?.alive !== false)
-)
+const aliveActors = computed(() => {
+  if (!s.worldState) return []
+  return allActors.value.filter((a) => s.worldState!.actorStates[a.id]?.alive !== false)
+})
 
 const pcActors = computed(() => aliveActors.value.filter((a) => a.role === 'pc'))
 
@@ -139,6 +140,18 @@ function addFact() {
 // --- Flag ---
 const flagKey = ref('')
 const flagValue = ref('')
+
+// Collapsible sections
+const collapsedSections = ref<Set<string>>(new Set(['knowledge', 'fact', 'flag', 'kill']))
+function toggleSection(name: string) {
+  if (collapsedSections.value.has(name)) {
+    collapsedSections.value.delete(name)
+  } else {
+    collapsedSections.value.add(name)
+  }
+  // trigger reactivity
+  collapsedSections.value = new Set(collapsedSections.value)
+}
 
 function setFlag() {
   if (!flagKey.value.trim()) return
@@ -255,53 +268,69 @@ function setFlag() {
       </section>
 
       <!-- Kill actor -->
-      <section class="op-row">
-        <label class="op-label">死亡</label>
-        <div class="op-controls">
-          <select v-model="killActorId">
-            <option value="">アクター...</option>
-            <option v-for="a in aliveActors" :key="a.id" :value="a.id">{{ a.name }}</option>
-          </select>
-          <button class="danger-btn" @click="killActor" :disabled="!killActorId">死亡</button>
-        </div>
+      <section class="op-row collapsible" :class="{ collapsed: collapsedSections.has('kill') }">
+        <label class="op-label" @click="toggleSection('kill')" style="cursor:pointer">
+          {{ collapsedSections.has('kill') ? '▸' : '▾' }} 死亡
+        </label>
+        <template v-if="!collapsedSections.has('kill')">
+          <div class="op-controls">
+            <select v-model="killActorId">
+              <option value="">アクター...</option>
+              <option v-for="a in aliveActors" :key="a.id" :value="a.id">{{ a.name }}</option>
+            </select>
+            <button class="danger-btn" @click="killActor" :disabled="!killActorId">死亡</button>
+          </div>
+        </template>
       </section>
 
       <!-- Actor knowledge -->
-      <section class="op-row">
-        <label class="op-label">知識追加</label>
-        <div class="op-controls">
-          <select v-model="knowledgeActorId">
-            <option value="">アクター...</option>
-            <option v-for="a in allActors" :key="a.id" :value="a.id">{{ a.name }}</option>
-          </select>
-          <input v-model="knowledgeText" placeholder="知識内容" @keyup.enter="addKnowledge" />
-          <button @click="addKnowledge" :disabled="!knowledgeActorId || !knowledgeText.trim()">追加</button>
-        </div>
+      <section class="op-row collapsible" :class="{ collapsed: collapsedSections.has('knowledge') }">
+        <label class="op-label" @click="toggleSection('knowledge')" style="cursor:pointer">
+          {{ collapsedSections.has('knowledge') ? '▸' : '▾' }} 知識追加
+        </label>
+        <template v-if="!collapsedSections.has('knowledge')">
+          <div class="op-controls">
+            <select v-model="knowledgeActorId">
+              <option value="">アクター...</option>
+              <option v-for="a in allActors" :key="a.id" :value="a.id">{{ a.name }}</option>
+            </select>
+            <input v-model="knowledgeText" placeholder="知識内容" @keyup.enter="addKnowledge" />
+            <button @click="addKnowledge" :disabled="!knowledgeActorId || !knowledgeText.trim()">追加</button>
+          </div>
+        </template>
       </section>
 
       <!-- Custom fact -->
-      <section class="op-row">
-        <label class="op-label">ファクト追加</label>
-        <div class="op-controls">
-          <select v-model="factType">
-            <option value="keeper_note">KPメモ</option>
-            <option value="pc_action">PC行動</option>
-            <option value="npc_action">NPC行動</option>
-            <option value="state_change">状態変化</option>
-          </select>
-          <input v-model="factDescription" placeholder="説明" @keyup.enter="addFact" />
-          <button @click="addFact" :disabled="!factDescription.trim()">追加</button>
-        </div>
+      <section class="op-row collapsible" :class="{ collapsed: collapsedSections.has('fact') }">
+        <label class="op-label" @click="toggleSection('fact')" style="cursor:pointer">
+          {{ collapsedSections.has('fact') ? '▸' : '▾' }} ファクト追加
+        </label>
+        <template v-if="!collapsedSections.has('fact')">
+          <div class="op-controls">
+            <select v-model="factType">
+              <option value="keeper_note">KPメモ</option>
+              <option value="pc_action">PC行動</option>
+              <option value="npc_action">NPC行動</option>
+              <option value="state_change">状態変化</option>
+            </select>
+            <input v-model="factDescription" placeholder="説明" @keyup.enter="addFact" />
+            <button @click="addFact" :disabled="!factDescription.trim()">追加</button>
+          </div>
+        </template>
       </section>
 
       <!-- Flag -->
-      <section class="op-row">
-        <label class="op-label">フラグ設定</label>
-        <div class="op-controls">
-          <input v-model="flagKey" placeholder="キー" />
-          <input v-model="flagValue" placeholder="値" @keyup.enter="setFlag" />
-          <button @click="setFlag" :disabled="!flagKey.trim()">設定</button>
-        </div>
+      <section class="op-row collapsible" :class="{ collapsed: collapsedSections.has('flag') }">
+        <label class="op-label" @click="toggleSection('flag')" style="cursor:pointer">
+          {{ collapsedSections.has('flag') ? '▸' : '▾' }} フラグ設定
+        </label>
+        <template v-if="!collapsedSections.has('flag')">
+          <div class="op-controls">
+            <input v-model="flagKey" placeholder="キー" />
+            <input v-model="flagValue" placeholder="値" @keyup.enter="setFlag" />
+            <button @click="setFlag" :disabled="!flagKey.trim()">設定</button>
+          </div>
+        </template>
       </section>
     </template>
   </div>
