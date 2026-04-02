@@ -76,7 +76,19 @@ export const useSessionStore = defineStore('session', () => {
 
   function flash(msg: string) {
     lastActionMessage.value = msg
-    setTimeout(() => { lastActionMessage.value = '' }, 2000)
+    setTimeout(() => { lastActionMessage.value = '' }, 4000)
+  }
+
+  function nameOf(id: string): string {
+    if (!session.value) return id
+    const s = session.value.scenarioSnapshot
+    const pc = session.value.pcNames[id]
+    if (pc) return pc
+    return s.npcs.find((n) => n.id === id)?.name
+      ?? s.locations.find((l) => l.id === id)?.name
+      ?? s.clues.find((c) => c.id === id)?.name
+      ?? s.events.find((e) => e.id === id)?.name
+      ?? id
   }
 
   function createNewSession(scenarioData: Scenario, name: string) {
@@ -91,7 +103,7 @@ export const useSessionStore = defineStore('session', () => {
     engineDiscoverClue(session.value, clueId, discoveredBy)
     triggerReactivity()
     autoSave()
-    flash('手がかりを発見')
+    flash(`「${nameOf(clueId)}」を発見`)
   }
 
   function doObtainClueFromActor(clueId: string, fromActorId: string, toActorId?: string) {
@@ -99,7 +111,7 @@ export const useSessionStore = defineStore('session', () => {
     engineObtainClue(session.value, clueId, fromActorId, toActorId)
     triggerReactivity()
     autoSave()
-    flash('情報を入手')
+    flash(`${nameOf(fromActorId)}から「${nameOf(clueId)}」を入手`)
   }
 
   function doMoveActor(actorId: string, locationId: string) {
@@ -107,7 +119,7 @@ export const useSessionStore = defineStore('session', () => {
     engineMoveActor(session.value, actorId, locationId)
     triggerReactivity()
     autoSave()
-    flash('移動完了')
+    flash(`${nameOf(actorId)}を${nameOf(locationId)}に移動`)
   }
 
   function doKillActor(actorId: string) {
@@ -115,7 +127,7 @@ export const useSessionStore = defineStore('session', () => {
     engineKillActor(session.value, actorId)
     triggerReactivity()
     autoSave()
-    flash('死亡')
+    flash(`${nameOf(actorId)}が死亡`)
   }
 
   function doAddActorKnowledge(actorId: string, knowledge: string) {
@@ -123,7 +135,7 @@ export const useSessionStore = defineStore('session', () => {
     engineAddActorKnowledge(session.value, actorId, knowledge)
     triggerReactivity()
     autoSave()
-    flash('知識追加')
+    flash(`${nameOf(actorId)}が「${knowledge}」を知った`)
   }
 
   function doVisitLocation(locationId: string, actorId: string) {
@@ -131,15 +143,20 @@ export const useSessionStore = defineStore('session', () => {
     engineVisitLocation(session.value, locationId, actorId)
     triggerReactivity()
     autoSave()
-    flash('場所を訪問')
+    flash(`${nameOf(actorId)}が${nameOf(locationId)}を訪問`)
   }
 
   function doFireEvent(eventId: string) {
     if (!session.value || !scenario.value) return
     const evt = scenario.value.events.find((e) => e.id === eventId)
     if (!evt) return
-    // Mark event as occurred BEFORE applying effects (consistent with advanceTime)
+    // Prevent duplicate firing of non-repeatable events
     const evtState = session.value.worldState.eventStates[eventId]
+    if (evtState?.occurred && !evt.isRepeatable) {
+      flash(`イベント「${evt.name}」は既に発生済みです`)
+      return
+    }
+    // Mark event as occurred BEFORE applying effects (consistent with advanceTime)
     if (evtState) {
       evtState.occurred = true
       evtState.occurredCount++

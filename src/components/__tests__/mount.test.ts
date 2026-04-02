@@ -190,10 +190,15 @@ describe('セッション作成フロー', () => {
   })
 
   it('空シナリオではセッション作成ボタンが無効', async () => {
-    // scenarioStore is empty by default
+    // Clear saved scenario so store loads empty
+    localStorage.removeItem('coc_scenario_draft')
+    setActivePinia(createPinia())
     const wrapper = mount(ControlPanel)
-    const createBtn = wrapper.find('button.primary-btn')
-    expect(createBtn.attributes('disabled')).toBeDefined()
+    const createBtns = wrapper.findAll('button.primary-btn')
+    // The "作成" button should be disabled when scenario is empty
+    const createBtn = createBtns.find((b) => b.text().includes('作成'))
+    expect(createBtn).toBeDefined()
+    expect(createBtn!.attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
 })

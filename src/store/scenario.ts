@@ -8,18 +8,35 @@ import type {
   ScenarioEvent,
   ScenarioElementType,
 } from '../types/scenario'
-import { createEmptyScenario } from '../utils/scenario'
+import { createEmptyScenario, exportScenario, importScenario } from '../utils/scenario'
 import { generateId } from '../utils/id'
 
+const SCENARIO_STORAGE_KEY = 'coc_scenario_draft'
+
+function loadSavedScenario(): Scenario {
+  try {
+    const json = localStorage.getItem(SCENARIO_STORAGE_KEY)
+    if (json) return importScenario(json)
+  } catch { /* ignore corrupt data */ }
+  return createEmptyScenario()
+}
+
 export const useScenarioStore = defineStore('scenario', () => {
-  const scenario = ref<Scenario>(createEmptyScenario())
+  const scenario = ref<Scenario>(loadSavedScenario())
   const selectedElement = ref<{ type: ScenarioElementType; id: string } | null>(null)
   const activeTab = ref<ScenarioElementType | 'overview'>('overview')
   const isDirty = ref(false)
 
+  function autoSave() {
+    try {
+      localStorage.setItem(SCENARIO_STORAGE_KEY, exportScenario(scenario.value))
+    } catch { /* storage full — ignore */ }
+  }
+
   function touch() {
     isDirty.value = true
     scenario.value.updatedAt = new Date().toISOString()
+    autoSave()
   }
 
   function setScenario(s: Scenario) {
@@ -27,6 +44,7 @@ export const useScenarioStore = defineStore('scenario', () => {
     selectedElement.value = null
     activeTab.value = 'overview'
     isDirty.value = false
+    autoSave()
   }
 
   function updateOverview(partial: Partial<Scenario>) {
@@ -70,6 +88,13 @@ export const useScenarioStore = defineStore('scenario', () => {
 
   function deleteNpc(id: string) {
     scenario.value.npcs = scenario.value.npcs.filter((n) => n.id !== id)
+    // Clean up references
+    for (const loc of scenario.value.locations) {
+      loc.npcIds = loc.npcIds.filter((nid) => nid !== id)
+    }
+    for (const clue of scenario.value.clues) {
+      if (clue.initialHolderId === id) clue.initialHolderId = undefined
+    }
     if (selectedElement.value?.id === id) selectedElement.value = null
     touch()
   }
@@ -101,6 +126,16 @@ export const useScenarioStore = defineStore('scenario', () => {
 
   function deleteLocation(id: string) {
     scenario.value.locations = scenario.value.locations.filter((l) => l.id !== id)
+    // Clean up references
+    for (const loc of scenario.value.locations) {
+      loc.connectedLocationIds = loc.connectedLocationIds.filter((lid) => lid !== id)
+    }
+    for (const npc of scenario.value.npcs) {
+      if (npc.initialLocationId === id) npc.initialLocationId = undefined
+    }
+    for (const clue of scenario.value.clues) {
+      if (clue.initialLocationId === id) clue.initialLocationId = undefined
+    }
     if (selectedElement.value?.id === id) selectedElement.value = null
     touch()
   }
@@ -130,6 +165,13 @@ export const useScenarioStore = defineStore('scenario', () => {
 
   function deleteClue(id: string) {
     scenario.value.clues = scenario.value.clues.filter((c) => c.id !== id)
+    // Clean up references
+    for (const loc of scenario.value.locations) {
+      loc.clueIds = loc.clueIds.filter((cid) => cid !== id)
+    }
+    for (const clue of scenario.value.clues) {
+      clue.leadsTo = clue.leadsTo.filter((lid) => lid !== id)
+    }
     if (selectedElement.value?.id === id) selectedElement.value = null
     touch()
   }
