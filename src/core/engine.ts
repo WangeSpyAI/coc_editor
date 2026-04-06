@@ -16,7 +16,6 @@ import type {
   Effect,
   Trigger,
   Action,
-  LogEntry,
 } from './types'
 
 const MAX_STABILIZE_STEPS = 100
@@ -100,7 +99,7 @@ export function evaluateClause(
   clause: ConditionClause,
   selfId: string,
   states: Record<string, EntityState>,
-  entities: Entity[],
+  _entities: Entity[],
   childrenMap: Record<string, string[]>,
 ): boolean {
   const targetIds = resolveReference(clause.reference, selfId, states, childrenMap)

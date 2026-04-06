@@ -5,7 +5,7 @@
  * テストシナリオは「悪霊の家」を簡略化したもの。
  */
 import { describe, it, expect } from 'vitest'
-import type { Entity, Scenario, WorldState } from '../types'
+import type { Entity, Scenario } from '../types'
 import {
   initializeWorldState,
   stabilize,

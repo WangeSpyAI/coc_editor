@@ -1,0 +1,468 @@
+/* ===== Reset & Base ===== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #1a1a2e;
+  --bg-surface: #16213e;
+  --bg-card: #1f2b47;
+  --bg-hover: #263352;
+  --text: #e0e0e0;
+  --text-muted: #8892a4;
+  --text-dim: #5a6478;
+  --accent: #4fc3f7;
+  --accent-hover: #29b6f6;
+  --warning: #ffb74d;
+  --danger: #ef5350;
+  --success: #66bb6a;
+  --border: #2a3a5c;
+  --radius: 6px;
+  --radius-lg: 10px;
+  font-family: 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+body {
+  min-height: 100vh;
+}
+
+/* ===== Layout ===== */
+.app-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr 320px;
+  grid-template-rows: 48px 1fr;
+  height: 100vh;
+  gap: 1px;
+  background: var(--border);
+}
+
+.app-header {
+  grid-column: 1 / -1;
+  background: var(--bg-surface);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 16px;
+}
+
+.app-header h1 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.app-header .scenario-title {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+/* ===== Sidebar (Entity Tree) ===== */
+.sidebar {
+  background: var(--bg-surface);
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.tree-node {
+  cursor: pointer;
+  user-select: none;
+}
+
+.tree-node-row {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  gap: 4px;
+  border-radius: var(--radius);
+  margin: 1px 4px;
+  transition: background 0.1s;
+}
+
+.tree-node-row:hover {
+  background: var(--bg-hover);
+}
+
+.tree-node-row.selected {
+  background: var(--bg-card);
+  border-left: 2px solid var(--accent);
+}
+
+.tree-node-name {
+  font-size: 13px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-node-labels {
+  display: flex;
+  gap: 2px;
+}
+
+.tree-label {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+.tree-indent {
+  width: 16px;
+  flex-shrink: 0;
+}
+
+.tree-toggle {
+  width: 16px;
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ===== Main Panel ===== */
+.main-panel {
+  background: var(--bg);
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.location-view h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.location-view .description {
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+/* ===== State Badges ===== */
+.state-section {
+  margin-bottom: 16px;
+}
+
+.state-section h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.state-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+
+.state-badge .cat-name {
+  color: var(--text-muted);
+}
+
+.state-badge .cat-value {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.state-badge.multi .cat-value {
+  color: var(--success);
+}
+
+/* ===== Children Grid ===== */
+.children-section {
+  margin-bottom: 16px;
+}
+
+.children-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.child-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.child-card:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.child-card .child-name {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.child-card .child-labels {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/* ===== Actions ===== */
+.actions-section {
+  margin-bottom: 16px;
+}
+
+.action-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.action-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: border-color 0.15s;
+}
+
+.action-card:hover {
+  border-color: var(--accent);
+}
+
+.action-info {
+  flex: 1;
+}
+
+.action-name {
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.action-owner {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.action-btn {
+  padding: 4px 14px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.action-btn:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/* ===== Detail Panel (Right) ===== */
+.detail-panel {
+  background: var(--bg-surface);
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.detail-panel h2 {
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+
+.detail-panel .description {
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.detail-section {
+  margin-bottom: 12px;
+}
+
+.detail-section h4 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+/* ===== Log ===== */
+.log-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.log-entry {
+  font-size: 12px;
+  padding: 4px 0;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.log-entry .log-step {
+  color: var(--text-dim);
+  margin-right: 8px;
+}
+
+.log-entry .log-type {
+  font-weight: 500;
+  margin-right: 4px;
+}
+
+.log-entry .log-type.action {
+  color: var(--accent);
+}
+
+.log-entry .log-type.trigger {
+  color: var(--warning);
+}
+
+/* ===== Pending Triggers ===== */
+.pending-section {
+  margin-top: 12px;
+}
+
+.pending-trigger {
+  background: rgba(255, 183, 77, 0.1);
+  border: 1px solid rgba(255, 183, 77, 0.3);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.pending-trigger .trigger-name {
+  color: var(--warning);
+  font-weight: 500;
+}
+
+.pending-trigger .unmet {
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ===== Buttons ===== */
+.btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+
+.btn:hover {
+  background: var(--bg-hover);
+}
+
+.btn-primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn-primary:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.btn-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn-danger:hover {
+  background: var(--danger);
+  color: white;
+}
+
+.btn-sm {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+/* ===== Empty State ===== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-dim);
+  gap: 12px;
+}
+
+.empty-state p {
+  font-size: 14px;
+}
+
+/* ===== Trigger/Action indicators ===== */
+.entity-indicators {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.indicator.trigger {
+  background: var(--warning);
+}
+
+.indicator.action {
+  background: var(--accent);
+}
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+}
