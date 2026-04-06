@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef } from 'react'
-import type { Scenario, WorldState, Entity, Action } from '../core/types'
+import type { Scenario, WorldState, Entity, Action, Effect } from '../core/types'
 import {
   initializeWorldState,
   stabilize,
   fireAction,
+  applyEffect,
   getAvailableActions,
   getPendingTriggers,
   buildChildrenMap,
@@ -151,6 +152,34 @@ export function useScenario() {
     return result
   }, [])
 
+  const applyAdHoc = useCallback((effects: Effect[], description: string) => {
+    if (!sessionRef.current) return
+    const { worldState, scenario } = sessionRef.current
+    const cloned = structuredClone(worldState) as WorldState
+    cloned.firedTriggerIds = new Set(worldState.firedTriggerIds)
+    const states = cloned.entityStates
+    const childrenMap = buildChildrenMap(states)
+
+    for (const effect of effects) {
+      // Ad-hoc effects use '__adhoc__' as selfId since they have no owning entity
+      applyEffect(effect, '__adhoc__', states, scenario.entities, childrenMap)
+    }
+
+    cloned.log.push({
+      timestamp: cloned.step,
+      type: 'action',
+      sourceEntityId: '__adhoc__',
+      description,
+    })
+
+    const result = stabilize(cloned, scenario)
+    update({
+      ...sessionRef.current,
+      worldState: result.worldState,
+      lastResult: result,
+    })
+  }, [update])
+
   const getPending = useCallback(() => {
     if (!sessionRef.current) return []
     return getPendingTriggers(sessionRef.current.worldState, sessionRef.current.scenario)
@@ -164,6 +193,7 @@ export function useScenario() {
     updateScenario,
     resetWorld,
     clearSession,
+    applyAdHoc,
     getEntityChildren,
     getEntityActions,
     getDescendantActions,

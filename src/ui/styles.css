@@ -466,3 +466,240 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-dim);
 }
+
+/* ===== Mobile Layout ===== */
+@media (max-width: 768px) {
+  .app-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: 48px auto 1fr;
+  }
+
+  .app-header {
+    padding: 0 8px;
+    gap: 8px;
+    overflow-x: auto;
+  }
+
+  .app-header h1 {
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .sidebar.mobile-visible {
+    display: block;
+    position: fixed;
+    top: 48px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100;
+    overflow-y: auto;
+  }
+
+  .main-panel {
+    padding: 12px 8px;
+  }
+
+  .detail-panel {
+    display: none;
+  }
+
+  .detail-panel.mobile-visible {
+    display: block;
+    position: fixed;
+    top: 48px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100;
+    overflow-y: auto;
+  }
+
+  /* Mobile tab bar */
+  .mobile-tabs {
+    display: flex;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .mobile-tab {
+    flex: 1;
+    padding: 8px 4px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+  }
+
+  .mobile-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  .children-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .action-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .action-btn {
+    align-self: flex-end;
+  }
+}
+
+@media (min-width: 769px) {
+  .mobile-tabs {
+    display: none;
+  }
+}
+
+/* ===== Graph View ===== */
+.graph-view {
+  padding: 16px;
+  overflow: auto;
+  height: 100%;
+}
+
+.graph-view h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.graph-container {
+  position: relative;
+  min-height: 400px;
+}
+
+.graph-node {
+  position: absolute;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  min-width: 120px;
+  text-align: center;
+  z-index: 1;
+}
+
+.graph-node:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px rgba(79, 195, 247, 0.3);
+}
+
+.graph-node.entity-node {
+  border-color: var(--accent);
+}
+
+.graph-node.trigger-node {
+  border-color: var(--warning);
+  background: rgba(255, 183, 77, 0.08);
+}
+
+.graph-node.trigger-node.fired {
+  opacity: 0.5;
+}
+
+.graph-node .node-label {
+  font-weight: 500;
+}
+
+.graph-node .node-sub {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.graph-legend {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.graph-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.graph-legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid;
+}
+
+/* ===== View Tabs ===== */
+.view-tabs {
+  display: flex;
+  gap: 2px;
+  margin-left: 16px;
+}
+
+.view-tab {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  cursor: pointer;
+}
+
+.view-tab.active {
+  color: var(--accent);
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+/* ===== Ad-hoc Action ===== */
+.adhoc-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.adhoc-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.adhoc-form select,
+.adhoc-form input {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.adhoc-form select:focus,
+.adhoc-form input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.adhoc-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}

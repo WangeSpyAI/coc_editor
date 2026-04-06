@@ -1,11 +1,16 @@
-import { useMemo, useCallback } from 'react'
+import { useMemo, useCallback, useState } from 'react'
 import './styles.css'
 import { useScenario } from '../hooks/useScenario'
 import { EntityTree } from './EntityTree'
 import { LocationView } from './LocationView'
 import { DetailPanel } from './DetailPanel'
+import { DependencyGraph } from './DependencyGraph'
+import { AdHocAction } from './AdHocAction'
 import { sampleScenario } from '../core/sampleScenario'
 import type { Entity } from '../core/types'
+
+type MainView = 'location' | 'graph'
+type MobileTab = 'tree' | 'main' | 'detail'
 
 export function App() {
   const {
@@ -13,10 +18,14 @@ export function App() {
     loadScenario,
     selectEntity,
     doAction,
+    applyAdHoc,
     resetWorld,
     clearSession,
     getPending,
   } = useScenario()
+
+  const [mainView, setMainView] = useState<MainView>('location')
+  const [mobileTab, setMobileTab] = useState<MobileTab>('main')
 
   const entityMap = useMemo(() => {
     if (!session) return new Map<string, Entity>()
@@ -41,6 +50,12 @@ export function App() {
 
   const handleNavigate = useCallback((entityId: string) => {
     selectEntity(entityId)
+    setMobileTab('main')
+  }, [selectEntity])
+
+  const handleMobileSelect = useCallback((entityId: string) => {
+    selectEntity(entityId)
+    setMobileTab('main')
   }, [selectEntity])
 
   // No session: show landing
@@ -66,10 +81,26 @@ export function App() {
       <header className="app-header">
         <h1>Scenario Editor</h1>
         <span className="scenario-title">{scenario.title}</span>
-        <span className="scenario-title">Step: {worldState.step}</span>
+
+        {/* View tabs */}
+        <div className="view-tabs">
+          <button
+            className={`view-tab${mainView === 'location' ? ' active' : ''}`}
+            onClick={() => setMainView('location')}
+          >
+            場所
+          </button>
+          <button
+            className={`view-tab${mainView === 'graph' ? ' active' : ''}`}
+            onClick={() => setMainView('graph')}
+          >
+            依存グラフ
+          </button>
+        </div>
+
         {pendingTriggers.length > 0 && (
           <span style={{ color: 'var(--warning)', fontSize: 12 }}>
-            待機中トリガー: {pendingTriggers.length}件
+            待機中: {pendingTriggers.length}
           </span>
         )}
         <div className="header-actions">
@@ -78,24 +109,60 @@ export function App() {
         </div>
       </header>
 
-      {/* Sidebar: Entity Tree */}
-      <EntityTree
-        scenario={scenario}
-        worldState={worldState}
-        selectedId={session.selectedEntityId}
-        onSelect={selectEntity}
-      />
+      {/* Mobile tab bar */}
+      <div className="mobile-tabs">
+        <button
+          className={`mobile-tab${mobileTab === 'tree' ? ' active' : ''}`}
+          onClick={() => setMobileTab('tree')}
+        >
+          ツリー
+        </button>
+        <button
+          className={`mobile-tab${mobileTab === 'main' ? ' active' : ''}`}
+          onClick={() => setMobileTab('main')}
+        >
+          {mainView === 'graph' ? 'グラフ' : '場所'}
+        </button>
+        <button
+          className={`mobile-tab${mobileTab === 'detail' ? ' active' : ''}`}
+          onClick={() => setMobileTab('detail')}
+        >
+          詳細
+        </button>
+      </div>
 
-      {/* Main: Location View */}
+      {/* Sidebar: Entity Tree */}
+      <div className={`sidebar${mobileTab === 'tree' ? ' mobile-visible' : ''}`}>
+        <EntityTree
+          scenario={scenario}
+          worldState={worldState}
+          selectedId={session.selectedEntityId}
+          onSelect={handleMobileSelect}
+        />
+      </div>
+
+      {/* Main Panel */}
       <div className="main-panel">
-        {selectedEntity ? (
-          <LocationView
-            entity={selectedEntity}
+        {mainView === 'graph' ? (
+          <DependencyGraph
             scenario={scenario}
             worldState={worldState}
-            onAction={handleAction}
-            onNavigate={handleNavigate}
+            onSelectEntity={handleNavigate}
           />
+        ) : selectedEntity ? (
+          <>
+            <LocationView
+              entity={selectedEntity}
+              scenario={scenario}
+              worldState={worldState}
+              onAction={handleAction}
+              onNavigate={handleNavigate}
+            />
+            <AdHocAction
+              scenario={scenario}
+              onApply={applyAdHoc}
+            />
+          </>
         ) : (
           <div className="empty-state">
             <p>左のツリーからエンティティを選択</p>
@@ -104,7 +171,7 @@ export function App() {
       </div>
 
       {/* Right: Detail Panel */}
-      <div className="detail-panel">
+      <div className={`detail-panel${mobileTab === 'detail' ? ' mobile-visible' : ''}`}>
         {selectedEntity ? (
           <DetailPanel
             entity={selectedEntity}
@@ -114,14 +181,13 @@ export function App() {
         ) : (
           <div className="empty-state">
             <p>エンティティを選択すると詳細が表示されます</p>
-            {/* Show global pending triggers */}
             {pendingTriggers.length > 0 && (
               <div className="pending-section" style={{ width: '100%' }}>
                 <div className="detail-section">
                   <h4>待機中トリガー（あと1条件）</h4>
                 </div>
                 {pendingTriggers.map(({ trigger, entity }) => (
-                  <div key={trigger.id} className="pending-trigger" style={{ cursor: 'pointer' }} onClick={() => selectEntity(entity.id)}>
+                  <div key={trigger.id} className="pending-trigger" style={{ cursor: 'pointer' }} onClick={() => handleNavigate(entity.id)}>
                     <div className="trigger-name">{trigger.name}</div>
                     <div className="unmet" style={{ fontSize: 11 }}>{entity.name}</div>
                   </div>

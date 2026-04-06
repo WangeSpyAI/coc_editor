@@ -7,12 +7,17 @@ import type { Scenario } from './types'
  *   館 (場所)
  *     ├─ 玄関ホール
  *     ├─ 書斎
- *     │   └─ 日記 (アイテム)
+ *     │   ├─ 日記 (アイテム)
+ *     │   └─ 書斎のドア (物体)
  *     ├─ 地下室
  *     │   └─ 祭壇 (アイテム)
  *     └─ 庭
+ *   探索者A (PC)
  *   山田 (NPC)
  *   鈴木 (NPC)
+ *
+ * PC・NPC・ドア・アイテムは全て同じEntity。
+ * ラベルで区別するだけ。ルール上の扱いは同一。
  */
 export const sampleScenario: Scenario = {
   id: 'sample-mansion',
@@ -278,6 +283,103 @@ export const sampleScenario: Scenario = {
         },
       ],
       triggers: [],
+    },
+    // === 物体（ドアも Entity） ===
+    {
+      id: 'study-door',
+      name: '書斎のドア',
+      parentId: 'study',
+      description: '重厚な木製の扉。鍵がかかっているようだ。',
+      labels: ['物体', 'ドア'],
+      categories: [
+        {
+          id: 'study-door-state',
+          name: '状態',
+          exclusive: true,
+          options: ['施錠', '解錠', '破壊'],
+        },
+      ],
+      actions: [
+        {
+          id: 'unlock-study-door',
+          name: '鍵を開ける',
+          entityId: 'study-door',
+          description: '$actorが書斎のドアの鍵を開けた。',
+          isPlayerAction: true,
+          effects: [
+            {
+              type: 'setCategory',
+              target: { type: 'self' },
+              categoryId: 'study-door-state',
+              value: '解錠',
+            },
+          ],
+        },
+        {
+          id: 'break-study-door',
+          name: 'ドアを蹴破る',
+          entityId: 'study-door',
+          description: '$actorが書斎のドアを蹴破った！大きな音が響いた。',
+          isPlayerAction: true,
+          effects: [
+            {
+              type: 'setCategory',
+              target: { type: 'self' },
+              categoryId: 'study-door-state',
+              value: '破壊',
+            },
+            {
+              type: 'setCategory',
+              target: { type: 'named', entityId: 'yamada' },
+              categoryId: 'yamada-attitude',
+              value: '警戒',
+            },
+          ],
+        },
+      ],
+      triggers: [],
+    },
+    // === PC（PCもEntity） ===
+    {
+      id: 'pc-a',
+      name: '探索者A',
+      parentId: null,
+      description: 'プレイヤーキャラクター。',
+      labels: ['PC'],
+      categories: [
+        {
+          id: 'pc-a-sanity',
+          name: 'SAN状態',
+          exclusive: true,
+          options: ['正常', '不安', '狂気'],
+        },
+      ],
+      actions: [],
+      triggers: [
+        {
+          id: 'trigger-pc-a-insanity',
+          name: '館が危険になるとSAN低下',
+          entityId: 'pc-a',
+          condition: {
+            clauses: [
+              {
+                reference: { type: 'named', entityId: 'mansion' },
+                categoryId: 'mansion-state',
+                value: '危険',
+              },
+            ],
+          },
+          effects: [
+            {
+              type: 'setCategory',
+              target: { type: 'self' },
+              categoryId: 'pc-a-sanity',
+              value: '不安',
+            },
+          ],
+          firedOnce: true,
+        },
+      ],
     },
     // === NPC ===
     {
