@@ -1,0 +1,439 @@
+// =====================================================
+// エンジン層
+//
+// 純粋関数。フレームワーク非依存。
+// ペトリネット意味論に基づくstabilize（不動点計算）が核。
+// =====================================================
+
+import type {
+  Entity,
+  EntityState,
+  WorldState,
+  Scenario,
+  TriggerCondition,
+  ConditionClause,
+  EntityReference,
+  Effect,
+  Trigger,
+  Action,
+  LogEntry,
+} from './types'
+
+const MAX_STABILIZE_STEPS = 100
+
+// ===== ツリー操作 =====
+
+/** 親→子のマップを構築 */
+export function buildChildrenMap(states: Record<string, EntityState>): Record<string, string[]> {
+  const map: Record<string, string[]> = {}
+  for (const [id, s] of Object.entries(states)) {
+    const pid = s.parentId ?? '__root__'
+    if (!map[pid]) map[pid] = []
+    map[pid].push(id)
+  }
+  return map
+}
+
+/** 祖先を上方向に辿る（自身は含まない） */
+export function getAncestors(entityId: string, states: Record<string, EntityState>): string[] {
+  const result: string[] = []
+  let current = states[entityId]?.parentId
+  while (current && states[current]) {
+    result.push(current)
+    current = states[current].parentId
+  }
+  return result
+}
+
+/** 子孫を下方向に辿る（自身は含まない） */
+export function getDescendants(
+  entityId: string,
+  childrenMap: Record<string, string[]>,
+): string[] {
+  const result: string[] = []
+  const stack = childrenMap[entityId] ? [...childrenMap[entityId]] : []
+  while (stack.length > 0) {
+    const id = stack.pop()!
+    result.push(id)
+    if (childrenMap[id]) stack.push(...childrenMap[id])
+  }
+  return result
+}
+
+/** 同位（同じ親を持つ、自身除く） */
+export function getSiblings(
+  entityId: string,
+  states: Record<string, EntityState>,
+  childrenMap: Record<string, string[]>,
+): string[] {
+  const pid = states[entityId]?.parentId ?? '__root__'
+  return (childrenMap[pid] ?? []).filter((id) => id !== entityId)
+}
+
+// ===== 参照解決 =====
+
+/** EntityReferenceを解決して、対象エンティティIDのリストを返す */
+export function resolveReference(
+  ref: EntityReference,
+  selfId: string,
+  states: Record<string, EntityState>,
+  childrenMap: Record<string, string[]>,
+): string[] {
+  switch (ref.type) {
+    case 'self':
+      return [selfId]
+    case 'ancestor':
+      return getAncestors(selfId, states)
+    case 'descendant':
+      return getDescendants(selfId, childrenMap)
+    case 'sibling':
+      return getSiblings(selfId, states, childrenMap)
+    case 'named':
+      return ref.entityId && states[ref.entityId] ? [ref.entityId] : []
+  }
+}
+
+// ===== 条件評価 =====
+
+/** 単一のConditionClauseを評価 */
+export function evaluateClause(
+  clause: ConditionClause,
+  selfId: string,
+  states: Record<string, EntityState>,
+  entities: Entity[],
+  childrenMap: Record<string, string[]>,
+): boolean {
+  const targetIds = resolveReference(clause.reference, selfId, states, childrenMap)
+
+  for (const targetId of targetIds) {
+    const state = states[targetId]
+    if (!state) continue
+
+    const val = state.categoryValues[clause.categoryId]
+    if (val === undefined) continue
+
+    let matches: boolean
+    if (Array.isArray(val)) {
+      // 非排他カテゴリ: 値リストに含まれるか
+      matches = val.includes(clause.value)
+    } else {
+      // 排他カテゴリ: 値が一致するか
+      matches = val === clause.value
+    }
+
+    if (clause.negate) matches = !matches
+
+    if (matches) return true
+  }
+
+  return false
+}
+
+/** TriggerCondition（AND結合）を評価 */
+export function evaluateCondition(
+  condition: TriggerCondition,
+  selfId: string,
+  states: Record<string, EntityState>,
+  entities: Entity[],
+  childrenMap: Record<string, string[]>,
+): boolean {
+  return condition.clauses.every((clause) =>
+    evaluateClause(clause, selfId, states, entities, childrenMap),
+  )
+}
+
+// ===== 効果適用 =====
+
+/** 単一のEffectを適用し、変更があったかを返す */
+export function applyEffect(
+  effect: Effect,
+  selfId: string,
+  states: Record<string, EntityState>,
+  entities: Entity[],
+  childrenMap: Record<string, string[]>,
+): boolean {
+  const targetIds = resolveReference(effect.target, selfId, states, childrenMap)
+  let changed = false
+
+  for (const targetId of targetIds) {
+    const state = states[targetId]
+    if (!state) continue
+
+    switch (effect.type) {
+      case 'setCategory': {
+        const current = state.categoryValues[effect.categoryId]
+        // エンティティ定義からカテゴリを探す
+        const entity = entities.find((e) => e.id === targetId)
+        const category = entity?.categories.find((c) => c.id === effect.categoryId)
+
+        if (category?.exclusive) {
+          // 排他: 値を置換
+          if (current !== effect.value) {
+            state.categoryValues[effect.categoryId] = effect.value
+            changed = true
+          }
+        } else {
+          // 非排他: 値を追加
+          const arr = Array.isArray(current) ? current : current ? [current] : []
+          if (!arr.includes(effect.value)) {
+            state.categoryValues[effect.categoryId] = [...arr, effect.value]
+            changed = true
+          }
+        }
+        break
+      }
+      case 'removeCategory': {
+        const current = state.categoryValues[effect.categoryId]
+        if (Array.isArray(current)) {
+          const idx = current.indexOf(effect.value)
+          if (idx !== -1) {
+            state.categoryValues[effect.categoryId] = current.filter((v) => v !== effect.value)
+            changed = true
+          }
+        } else if (current === effect.value) {
+          state.categoryValues[effect.categoryId] = ''
+          changed = true
+        }
+        break
+      }
+      case 'move': {
+        if (state.parentId !== effect.newParentId) {
+          // childrenMap を更新
+          const oldPid = state.parentId ?? '__root__'
+          if (childrenMap[oldPid]) {
+            childrenMap[oldPid] = childrenMap[oldPid].filter((id) => id !== targetId)
+          }
+          state.parentId = effect.newParentId
+          const newPid = effect.newParentId ?? '__root__'
+          if (!childrenMap[newPid]) childrenMap[newPid] = []
+          childrenMap[newPid].push(targetId)
+          changed = true
+        }
+        break
+      }
+    }
+  }
+
+  return changed
+}
+
+// ===== Stabilize（不動点計算） =====
+
+export interface StabilizeResult {
+  worldState: WorldState
+  firedTriggers: { triggerId: string; entityId: string; step: number }[]
+  reachedFixedPoint: boolean // true = 正常停止, false = 上限到達（振動の可能性）
+}
+
+/**
+ * 状態を安定させる。
+ *
+ * 1. 全トリガーをスキャンし、条件が成立するものを見つける
+ * 2. 効果を適用
+ * 3. 変更があれば1に戻る
+ * 4. 変更がなくなったら（不動点）停止
+ */
+export function stabilize(
+  worldState: WorldState,
+  scenario: Scenario,
+): StabilizeResult {
+  const states = worldState.entityStates
+  let childrenMap = buildChildrenMap(states)
+  const firedTriggers: StabilizeResult['firedTriggers'] = []
+  let step = worldState.step
+
+  for (let i = 0; i < MAX_STABILIZE_STEPS; i++) {
+    let anyChanged = false
+
+    for (const entity of scenario.entities) {
+      for (const trigger of entity.triggers) {
+        // firedOnce チェック
+        if (trigger.firedOnce && worldState.firedTriggerIds.has(trigger.id)) {
+          continue
+        }
+
+        // 条件評価
+        if (
+          evaluateCondition(trigger.condition, entity.id, states, scenario.entities, childrenMap)
+        ) {
+          // 効果適用
+          let triggerChanged = false
+          for (const effect of trigger.effects) {
+            const changed = applyEffect(effect, entity.id, states, scenario.entities, childrenMap)
+            if (changed) triggerChanged = true
+          }
+
+          // firedOnce は効果がなくても発火済みにする（二度目を防ぐため）
+          if (trigger.firedOnce) {
+            if (!worldState.firedTriggerIds.has(trigger.id)) {
+              worldState.firedTriggerIds.add(trigger.id)
+              triggerChanged = true
+            }
+          }
+
+          if (triggerChanged) {
+            anyChanged = true
+            firedTriggers.push({ triggerId: trigger.id, entityId: entity.id, step })
+
+            // ログ
+            worldState.log.push({
+              timestamp: step,
+              type: 'trigger',
+              sourceEntityId: entity.id,
+              description: `トリガー「${trigger.name}」が発火`,
+            })
+          }
+        }
+      }
+    }
+
+    step++
+    worldState.step = step
+
+    if (!anyChanged) {
+      return { worldState, firedTriggers, reachedFixedPoint: true }
+    }
+  }
+
+  // 上限到達 = 振動の可能性
+  return { worldState, firedTriggers, reachedFixedPoint: false }
+}
+
+// ===== アクション実行 =====
+
+/** アクションの表示条件を評価し、利用可能なアクションを返す */
+export function getAvailableActions(
+  entityId: string,
+  worldState: WorldState,
+  scenario: Scenario,
+): Action[] {
+  const entity = scenario.entities.find((e) => e.id === entityId)
+  if (!entity) return []
+
+  const states = worldState.entityStates
+  const childrenMap = buildChildrenMap(states)
+
+  return entity.actions.filter((action) => {
+    if (!action.displayCondition) return true
+    return evaluateCondition(action.displayCondition, entityId, states, scenario.entities, childrenMap)
+  })
+}
+
+/** アクションを発火し、stabilize する */
+export function fireAction(
+  actionId: string,
+  worldState: WorldState,
+  scenario: Scenario,
+  actorId?: string,
+): StabilizeResult {
+  // アクションを探す
+  let action: Action | undefined
+  let ownerEntity: Entity | undefined
+  for (const entity of scenario.entities) {
+    const found = entity.actions.find((a) => a.id === actionId)
+    if (found) {
+      action = found
+      ownerEntity = entity
+      break
+    }
+  }
+
+  if (!action || !ownerEntity) {
+    return { worldState, firedTriggers: [], reachedFixedPoint: true }
+  }
+
+  const states = worldState.entityStates
+  const childrenMap = buildChildrenMap(states)
+
+  // 効果適用
+  for (const effect of action.effects) {
+    applyEffect(effect, ownerEntity.id, states, scenario.entities, childrenMap)
+  }
+
+  // ログ
+  const desc = actorId
+    ? action.description.replace(/\$actor/g, actorId)
+    : action.description
+  worldState.log.push({
+    timestamp: worldState.step,
+    type: 'action',
+    sourceEntityId: ownerEntity.id,
+    description: desc,
+    actorId,
+  })
+
+  // stabilize
+  return stabilize(worldState, scenario)
+}
+
+// ===== ワールド状態初期化 =====
+
+export function initializeWorldState(scenario: Scenario): WorldState {
+  const entityStates: Record<string, EntityState> = {}
+
+  for (const entity of scenario.entities) {
+    const categoryValues: Record<string, string | string[]> = {}
+    for (const cat of entity.categories) {
+      if (cat.exclusive) {
+        // 排他: 最初の選択肢をデフォルト
+        categoryValues[cat.id] = cat.options[0] ?? ''
+      } else {
+        // 非排他: 空リスト
+        categoryValues[cat.id] = []
+      }
+    }
+
+    entityStates[entity.id] = {
+      entityId: entity.id,
+      parentId: entity.parentId,
+      categoryValues,
+    }
+  }
+
+  return {
+    scenarioId: scenario.id,
+    entityStates,
+    firedTriggerIds: new Set(),
+    log: [],
+    step: 0,
+  }
+}
+
+// ===== ユーティリティ =====
+
+/** エンティティのツリー構造を返す */
+export function getChildren(
+  entityId: string,
+  states: Record<string, EntityState>,
+): string[] {
+  return Object.entries(states)
+    .filter(([, s]) => s.parentId === entityId)
+    .map(([id]) => id)
+}
+
+/** 待機中トリガー: 条件が部分充足（残り1つ）のトリガーを検出 */
+export function getPendingTriggers(
+  worldState: WorldState,
+  scenario: Scenario,
+): { trigger: Trigger; entity: Entity; unmetClauses: ConditionClause[] }[] {
+  const states = worldState.entityStates
+  const childrenMap = buildChildrenMap(states)
+  const result: { trigger: Trigger; entity: Entity; unmetClauses: ConditionClause[] }[] = []
+
+  for (const entity of scenario.entities) {
+    for (const trigger of entity.triggers) {
+      if (trigger.firedOnce && worldState.firedTriggerIds.has(trigger.id)) continue
+
+      const unmet = trigger.condition.clauses.filter(
+        (c) => !evaluateClause(c, entity.id, states, scenario.entities, childrenMap),
+      )
+
+      // 残り1つ = あと一歩で発火
+      if (unmet.length === 1) {
+        result.push({ trigger, entity, unmetClauses: unmet })
+      }
+    }
+  }
+
+  return result
+}
