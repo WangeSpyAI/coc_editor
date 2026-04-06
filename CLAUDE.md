@@ -1,146 +1,78 @@
-# CoC Scenario Editor — Development Guide
+# Scenario Editor — Development Guide
 
-## Design Principles (設計方針)
+## What This Is
 
-These principles were learned through debugging real issues. Follow them strictly.
-
-### 1. Canonical Primitives (正準プリミティブ)
-
-**All state mutations that touch multiple stores MUST go through a single canonical function.**
-
-- **Location changes** → `placeActorAt(state, actorId, locationId)` in `world.ts`
-  - Updates `actorState.locationId` AND `locationStates.visitedBy` atomically
-  - Every function that moves an actor (session.ts `moveActor`, `visitLocation`, `addPlayerCharacter`; effects.ts `moveActor`, `setNpcState`) MUST call `placeActorAt`
-  - NEVER set `locationId` or push to `visitedBy` directly
-
-**Why**: Scattered location update logic caused bugs where `visitedBy` wasn't updated or `locationId` wasn't set. DRY violation was the root cause.
-
-### 2. Dual-Write Invariant (二重書き込み不変条件)
-
-When an operation must update N pieces of state, ALL N must be updated atomically. Test for this explicitly.
-
-Examples:
-- `placeActorAt`: locationId + visitedBy
-- `addPlayerCharacter`: actorStates + pcNames + visitedBy
-- `transferClue`: holderId + locationId + discovered + discoveredBy
-
-### 3. Condition/Query Consistency (条件/クエリ一貫性)
-
-**Conditions and queries that answer the same question MUST use the same resolution logic.**
-
-- `evaluateCondition` for `actorAt`/`npcAt` and `getActorsAtLocation` both use `resolveActorLocation()`
-- `resolveActorLocation` implements 3-tier fallback: runtime locationId → NPC schedule → initial location
-- When adding a new location-aware feature, use `resolveActorLocation`, don't reimplement
-
-### 4. Top-Level vs Custom Fields (トップレベル vs カスタムフィールド)
-
-`ActorRuntimeState` has typed top-level fields (`alive`, `locationId`, `stats`) and an untyped `custom` bag.
-
-- `setNpcState` effect MUST check `field` name and route to the correct target:
-  - `alive` → `actor.alive` (boolean)
-  - `locationId` → `placeActorAt()` (triggers dual-write)
-  - Everything else → `actor.custom[field]`
-- NEVER put typed data (HP, MP, stats) in `custom`. Use `stats?: CharacterStats`.
-
-### 5. Facts are Audit Log, Not Event Source (事実は監査ログ)
-
-- `WorldState` is mutable and is the **source of truth**
-- `Fact[]` is an append-only audit trail for session history/replay display
-- Do NOT derive current state from facts. Read state directly from WorldState fields.
-
-### 6. Effect/Session Parity (エフェクト/セッション対称性)
-
-Both `effects.ts` and `session.ts` can mutate WorldState. They must follow the same rules:
-- Both use `placeActorAt` for location changes
-- Both use `ensureActorState` patterns for safety
-- Event state should be set BEFORE applying effects (consistent timing)
-
-### 7. Optional Scenario Context (オプショナルシナリオコンテキスト)
-
-`evaluateCondition(condition, state, scenario?)` takes an optional scenario for richer evaluation.
-- Without scenario: runtime-only (backward compatible)
-- With scenario: enables schedule-based and initial-location fallback
-- Always pass scenario when available in session context
+ペトリネット意味論に基づくシナリオエディタ。
+エンティティツリー・カテゴリ・トリガー・アクションで世界を定義し、
+stabilize（不動点計算）で因果連鎖を自動解決する。
 
 ## Architecture
 
-### Engine Layer (`src/engine/`)
-Pure functions, no Vue/Pinia dependency. Fully testable with Vitest.
+### Core Engine (`src/core/`)
+Pure functions. Framework-independent. Fully testable with Vitest.
 
-- `world.ts` — World state initialization, location resolution, actor/clue queries
-- `conditions.ts` — Condition evaluation (all Condition types)
-- `effects.ts` — Effect application (all Effect types)
-- `session.ts` — Session lifecycle (create, PC management, actions, save/load)
-- `dice.ts` — Dice rolling, skill checks
-- `derived.ts` — Derived stat calculation
+- `types.ts` — Entity, Category, Trigger, Action, Effect, WorldState, Scenario
+- `engine.ts` — Tree operations, condition evaluation, effect application, stabilize, fireAction
+- `sampleScenario.ts` — Demo scenario for development
 
-### UI Layer (`src/components/`, `src/store/`, `src/composables/`)
-Vue 3 + Pinia. Components access engine through store actions.
+Key concepts:
+- **Entity Tree**: All entities (locations, NPCs, items) in parent-child tree. parentId = containment.
+- **Categories**: State axes. Exclusive (enum, one value) or non-exclusive (flags, multiple values).
+- **Triggers**: Auto-fire rules. Condition (AND of clauses) → Effects. Chain until fixed point.
+- **Actions**: Manual operations with display conditions and effects.
+- **Stabilize**: Scan all triggers, apply matching, repeat until no changes. MAX_STABILIZE_STEPS = 100.
+- **References**: self, ancestor, descendant, sibling, named — resolve to entity IDs for conditions/effects.
 
-- `store/session.ts` — Session store, wraps engine functions with reactivity + persistence
-- `store/scenario.ts` — Scenario editing store
-- `store/app.ts` — App mode switching (editor ↔ session)
-- `composables/useEntityNames.ts` — ID → human-readable name resolution
+### UI Layer (`src/ui/`, `src/hooks/`)
+React + TypeScript. Components access engine through `useScenario` hook.
 
-### 8. Initialization vs Runtime (初期化とランタイムの区別)
-
-NPC initial placement (`initializeWorldState`) sets `locationId` directly in the actorStates initializer. It does NOT use `placeActorAt` because NPCs are not "visitors" — `visitedBy` tracks PC visits for gameplay purposes, not NPC presence.
-
-- `initializeWorldState`: direct `locationId` assignment (no visitedBy)
-- Runtime moves (effects, session actions): always through `placeActorAt` (with visitedBy)
-
-**Why**: Using `placeActorAt` during initialization caused NPCs to appear as "visited" in location cards from the start.
-
-### 9. Non-Null Assertions in Computed (computed内の非nullアサーション)
-
-Pinia store computed values may run when store state is null. Always guard before using `!` assertions:
-
-```typescript
-// BAD: crashes if worldState is null
-const aliveActors = computed(() =>
-  allActors.value.filter((a) => s.worldState!.actorStates[a.id]?.alive !== false)
-)
-
-// GOOD: guard first
-const aliveActors = computed(() => {
-  if (!s.worldState) return []
-  return allActors.value.filter((a) => s.worldState!.actorStates[a.id]?.alive !== false)
-})
-```
+- `hooks/useScenario.ts` — Engine wrapper with React state, localStorage persistence, action dispatch
+- `ui/App.tsx` — 3-column layout: tree | location view | detail panel
+- `ui/EntityTree.tsx` — Collapsible tree of all entities
+- `ui/LocationView.tsx` — Main KP view: selected entity + descendant actions aggregated
+- `ui/DetailPanel.tsx` — All categories, triggers, pending triggers, logs for selected entity
+- `ui/styles.css` — Dark theme CSS
 
 ### Testing
 
 #### Unit Tests (`npm test`)
-- Engine logic: `src/engine/__tests__/` (conditions, effects, session, world, consistency)
-- Component mount: `src/components/__tests__/mount.test.ts` — verifies all components mount without runtime errors
-- `consistency.test.ts` specifically tests dual-write invariants
+- Engine logic: `src/core/__tests__/engine.test.ts` — 18 tests
+- Covers: tree ops, condition eval, effect application, stabilize (chains, firedOnce, oscillation), fireAction, getAvailableActions, getPendingTriggers
 
-#### E2E Smoke Tests (`npm run test:e2e`)
-- Builds production bundle and starts preview server
-- Verifies HTML, JS, CSS assets are served correctly
-- Validates bundle contains expected code (createApp, pinia)
+#### Build (`npm run build`)
+- `tsc -b && vite build` — TypeScript type-checking + production bundle
 
-#### What Tests Catch and Don't Catch
-Verified by intentional breakage experiments:
-- **Import errors**: caught by both tests and build
-- **Nonexistent fields**: caught by both tests and build  
-- **Broken template bindings**: caught by both tests and build
-- **Engine logic bugs** (e.g., missing visitedBy update): caught by tests, NOT by build
-- **Missing triggerReactivity()**: NOT caught by either — needs DOM assertion tests or real browser E2E
+## Design Principles
 
-### Stop Hook Workflow
-On every commit attempt, the stop hook runs:
-1. `npm test` — unit + component mount tests must pass
-2. `npm run build` — TypeScript compilation + Vite build must succeed
-3. `npm run test:e2e` — E2E smoke tests must pass
-4. Agent design audit — checks for state consistency, dual-write invariants, effect/session parity, condition/query divergence, type safety
+### 1. Engine is Pure
+Engine functions take data in, return data out. No side effects, no framework deps.
+All state mutation happens through `stabilize` and `fireAction`.
+
+### 2. Stabilize Semantics
+- Triggers only record as "fired" when effects actually change state (or firedOnce)
+- No-op triggers don't count as changes — prevents infinite loops from idempotent rules
+- `reachedFixedPoint: false` signals oscillation (MAX_STABILIZE_STEPS reached)
+
+### 3. Reference Resolution
+Conditions and effects use EntityReference to specify targets:
+- `self` — the entity owning the trigger/action
+- `ancestor` — up the parent chain
+- `descendant` — down the children tree
+- `sibling` — same parent, excluding self
+- `named` — specific entity by ID
+
+### 4. Category Semantics
+- Exclusive: single string value, `setCategory` replaces
+- Non-exclusive: string array, `setCategory` adds, `removeCategory` removes
+
+### 5. UI State Management
+- `useScenario` hook owns all state (scenario + worldState + selection)
+- Session persisted to localStorage as JSON (Set → Array for serialization)
+- World state reset re-initializes from scenario + stabilize
 
 ## Common Pitfalls
 
-- Adding a new way to move actors without using `placeActorAt` → visitedBy desyncs
-- Adding a new location condition without using `resolveActorLocation` → inconsistent with queries
-- Putting typed state in `custom` instead of a proper field → bypasses type system
-- Setting event state after effects → timing inconsistency with condition evaluation
-- Using `placeActorAt` during initialization → NPCs incorrectly appear as visitors
-- Non-null assertions (`!`) in computed without null guard → runtime crash when store is empty
-- Forgetting `triggerReactivity()` after engine mutations → stale UI (not caught by unit tests)
+- Forgetting to deep-clone WorldState before mutation (structuredClone + Set restore)
+- Adding effects that create oscillation (A→B→A) — stabilize detects but doesn't resolve
+- Non-exclusive category: setCategory adds, doesn't replace — use removeCategory first if needed
+- EntityReference resolution returns empty array if entity doesn't exist — effects silently skip
