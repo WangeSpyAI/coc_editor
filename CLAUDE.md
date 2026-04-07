@@ -29,14 +29,14 @@ Pure functions. Framework-independent. Fully testable with Vitest.
 ### UI Layer (`src/ui/`, `src/hooks/`)
 React + TypeScript. Components access engine through `useScenario` hook.
 
-- `hooks/useScenario.ts` — Engine wrapper with React state, localStorage persistence, action dispatch
-- `ui/App.tsx` — 3-column layout: tree | location view | detail panel
+- `hooks/useScenario.ts` — Engine wrapper with React state, localStorage persistence, full CRUD
+- `ui/App.tsx` — 3-column layout: tree | location view | detail panel. Landing page for create/import.
 - `ui/StateBadges.tsx` — Clickable state badges (single-source component)
-- `ui/LocationView.tsx` — Main KP view
-- `ui/DetailPanel.tsx` — Entity detail panel
+- `ui/LocationView.tsx` — Main KP view (actions, children, state)
+- `ui/DetailPanel.tsx` — Entity editor: inline edit name/desc/labels, category CRUD, action/trigger delete
 - `ui/EntityTree.tsx` — Collapsible tree sidebar
 - `ui/DependencyGraph.tsx` — Trigger chain visualization
-- `ui/LiveEditor.tsx` — Real-time scenario authoring
+- `ui/LiveEditor.tsx` — Real-time scenario authoring (add actions/triggers/entities during play)
 
 ### Testing (`npm test`)
 - Engine logic: `src/core/__tests__/engine.test.ts`
@@ -54,7 +54,7 @@ React + TypeScript. Components access engine through `useScenario` hook.
 ```
 commitMutation(next)    — 状態/スキーマ変更。undo自動push。
 lifecycleReset(next)    — セッション開始/終了。undoスタッククリア。
-(selectEntity内で直書き) — UI選択のみ。undoなし。
+(selectEntity)          — UI選択のみ。独立したuseState。undoなし。永続化なし。
 ```
 
 `update()` や `pushUndo()` のような汎用関数は存在しない。
