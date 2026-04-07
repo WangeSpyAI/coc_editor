@@ -18,6 +18,7 @@ export function App() {
     loadScenario,
     selectEntity,
     doAction,
+    setCategoryValue,
     applyAdHoc,
     addEntity,
     addAction,
@@ -159,6 +160,7 @@ export function App() {
               worldState={worldState}
               onAction={handleAction}
               onNavigate={handleNavigate}
+              onSetCategory={setCategoryValue}
             />
             <LiveEditor
               scenario={scenario}
@@ -183,6 +185,7 @@ export function App() {
             entity={selectedEntity}
             scenario={scenario}
             worldState={worldState}
+            onSetCategory={setCategoryValue}
           />
         ) : (
           <div className="empty-state">

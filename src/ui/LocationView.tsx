@@ -8,15 +8,16 @@ interface Props {
   worldState: WorldState
   onAction: (actionId: string) => void
   onNavigate: (entityId: string) => void
+  onSetCategory: (entityId: string, categoryId: string, value: string) => void
 }
 
 /**
  * 場所ビュー: KPのメインビュー
  *
- * 選択エンティティとその子孫の状態・アクションを集約表示。
- * KPはここを見るだけで「今の状況」が分かる。
+ * 状態バッジはクリッカブル。「〜を調べる」のようなアクションは不要 —
+ * KPがバッジをクリックすれば状態が変わり、トリガーが連鎖する。
  */
-export function LocationView({ entity, scenario, worldState, onAction, onNavigate }: Props) {
+export function LocationView({ entity, scenario, worldState, onAction, onNavigate, onSetCategory }: Props) {
   const childrenMap = useMemo(
     () => buildChildrenMap(worldState.entityStates),
     [worldState.entityStates],
@@ -30,7 +31,6 @@ export function LocationView({ entity, scenario, worldState, onAction, onNavigat
 
   const state = worldState.entityStates[entity.id]
 
-  // Direct children
   const children = useMemo(() => {
     const ids = childrenMap[entity.id] ?? []
     return ids
@@ -38,7 +38,6 @@ export function LocationView({ entity, scenario, worldState, onAction, onNavigat
       .filter((e): e is Entity => e !== undefined)
   }, [childrenMap, entity.id, entityMap])
 
-  // Descendant actions (aggregated)
   const descendantActions = useMemo(() => {
     const descIds = [entity.id, ...getDescendants(entity.id, childrenMap)]
     const result: { entity: Entity; action: Action }[] = []
@@ -53,7 +52,6 @@ export function LocationView({ entity, scenario, worldState, onAction, onNavigat
     return result
   }, [entity.id, childrenMap, entityMap, worldState, scenario])
 
-  // Entity categories (current state)
   const categories = useMemo(() => {
     if (!state) return []
     return entity.categories.map((cat) => ({
@@ -67,34 +65,38 @@ export function LocationView({ entity, scenario, worldState, onAction, onNavigat
       <h2>{entity.name}</h2>
       <p className="description">{entity.description}</p>
 
-      {/* Current state */}
+      {/* Clickable state badges */}
       {categories.length > 0 && (
         <div className="state-section">
           <h3>状態</h3>
           <div className="state-badges">
             {categories.map((cat) => {
               const val = cat.currentValue
-              if (Array.isArray(val)) {
-                if (val.length === 0) return null
+              return cat.options.map((opt) => {
+                const active = Array.isArray(val) ? val.includes(opt) : val === opt
                 return (
-                  <span key={cat.id} className="state-badge multi">
+                  <span
+                    key={`${cat.id}-${opt}`}
+                    className="state-badge clickable"
+                    style={{
+                      cursor: 'pointer',
+                      borderColor: active ? 'var(--accent)' : 'var(--border)',
+                      opacity: active ? 1 : 0.35,
+                    }}
+                    onClick={() => onSetCategory(entity.id, cat.id, opt)}
+                    title={`${cat.name}: ${opt}`}
+                  >
                     <span className="cat-name">{cat.name}:</span>
-                    <span className="cat-value">{val.join(', ')}</span>
+                    <span className={active ? 'cat-value' : 'cat-name'}>{opt}</span>
                   </span>
                 )
-              }
-              return (
-                <span key={cat.id} className="state-badge">
-                  <span className="cat-name">{cat.name}:</span>
-                  <span className="cat-value">{val}</span>
-                </span>
-              )
+              })
             })}
           </div>
         </div>
       )}
 
-      {/* Children */}
+      {/* Children with inline clickable states */}
       {children.length > 0 && (
         <div className="children-section">
           <div className="state-section">
@@ -104,31 +106,43 @@ export function LocationView({ entity, scenario, worldState, onAction, onNavigat
             {children.map((child) => {
               const childState = worldState.entityStates[child.id]
               return (
-                <div
-                  key={child.id}
-                  className="child-card"
-                  onClick={() => onNavigate(child.id)}
-                >
-                  <div className="child-name">{child.name}</div>
+                <div key={child.id} className="child-card">
+                  <div className="child-name" style={{ cursor: 'pointer' }} onClick={() => onNavigate(child.id)}>
+                    {child.name}
+                  </div>
                   <div className="child-labels">
                     {child.labels.map((l) => (
                       <span key={l} className="tree-label">{l}</span>
                     ))}
                   </div>
-                  {/* Show child's current category values */}
+                  {/* Clickable child state badges */}
                   {childState && child.categories.length > 0 && (
-                    <div style={{ marginTop: 4 }}>
-                      {child.categories.map((cat) => {
-                        const v = childState.categoryValues[cat.id]
-                        const display = Array.isArray(v) ? (v.length > 0 ? v.join(', ') : null) : v
-                        if (!display) return null
-                        return (
-                          <span key={cat.id} className="state-badge" style={{ fontSize: 11, padding: '1px 6px', margin: '2px 2px 0 0' }}>
-                            <span className="cat-name" style={{ fontSize: 10 }}>{cat.name}:</span>
-                            <span className="cat-value" style={{ fontSize: 10 }}>{display}</span>
-                          </span>
-                        )
-                      })}
+                    <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                      {child.categories.map((cat) =>
+                        cat.options.map((opt) => {
+                          const v = childState.categoryValues[cat.id]
+                          const active = Array.isArray(v) ? v.includes(opt) : v === opt
+                          return (
+                            <span
+                              key={`${cat.id}-${opt}`}
+                              className="state-badge clickable"
+                              style={{
+                                fontSize: 11, padding: '1px 6px',
+                                cursor: 'pointer',
+                                borderColor: active ? 'var(--accent)' : 'var(--border)',
+                                opacity: active ? 1 : 0.3,
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onSetCategory(child.id, cat.id, opt)
+                              }}
+                              title={`${cat.name}: ${opt}`}
+                            >
+                              <span className={active ? 'cat-value' : 'cat-name'} style={{ fontSize: 10 }}>{opt}</span>
+                            </span>
+                          )
+                        }),
+                      )}
                     </div>
                   )}
                 </div>
@@ -138,11 +152,11 @@ export function LocationView({ entity, scenario, worldState, onAction, onNavigat
         </div>
       )}
 
-      {/* Available actions (aggregated from self + descendants) */}
+      {/* Actions — only those with real causal effects */}
       {descendantActions.length > 0 && (
         <div className="actions-section">
           <div className="state-section">
-            <h3>利用可能なアクション</h3>
+            <h3>アクション</h3>
           </div>
           <div className="action-list">
             {descendantActions.map(({ entity: ownerEntity, action }) => (
@@ -153,21 +167,12 @@ export function LocationView({ entity, scenario, worldState, onAction, onNavigat
                     <div className="action-owner">{ownerEntity.name}</div>
                   )}
                 </div>
-                <button
-                  className="action-btn"
-                  onClick={() => onAction(action.id)}
-                >
+                <button className="action-btn" onClick={() => onAction(action.id)}>
                   実行
                 </button>
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {descendantActions.length === 0 && children.length === 0 && categories.length === 0 && (
-        <div style={{ color: 'var(--text-dim)', marginTop: 16 }}>
-          このエンティティには子要素・アクション・カテゴリがありません。
         </div>
       )}
     </div>

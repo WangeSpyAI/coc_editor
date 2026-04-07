@@ -6,17 +6,16 @@ interface Props {
   entity: Entity
   scenario: Scenario
   worldState: WorldState
+  onSetCategory: (entityId: string, categoryId: string, value: string) => void
 }
 
 /**
  * 右パネル: 選択エンティティの詳細情報
  *
- * - 全カテゴリの現在値
- * - トリガー一覧（発火済み表示）
- * - 待機中トリガー（あと1条件で発火）
- * - 描写ログ（このエンティティ関連）
+ * カテゴリバッジはクリッカブル — KPが直接状態を変更できる。
+ * クリックで値を変更 → 即座にstabilize → トリガー連鎖が走る。
  */
-export function DetailPanel({ entity, scenario, worldState }: Props) {
+export function DetailPanel({ entity, scenario, worldState, onSetCategory }: Props) {
   const state = worldState.entityStates[entity.id]
 
   const entityMap = useMemo(() => {
@@ -25,13 +24,11 @@ export function DetailPanel({ entity, scenario, worldState }: Props) {
     return m
   }, [scenario.entities])
 
-  // Pending triggers for the whole world, filtered to this entity
   const pending = useMemo(
     () => getPendingTriggers(worldState, scenario).filter((p) => p.entity.id === entity.id),
     [worldState, scenario, entity.id],
   )
 
-  // Logs related to this entity
   const relatedLogs = useMemo(
     () => worldState.log.filter((l) => l.sourceEntityId === entity.id).slice(-20),
     [worldState.log, entity.id],
@@ -64,10 +61,10 @@ export function DetailPanel({ entity, scenario, worldState }: Props) {
         </div>
       )}
 
-      {/* All categories with current values */}
+      {/* Clickable categories */}
       {entity.categories.length > 0 && state && (
         <div className="detail-section">
-          <h4>カテゴリ</h4>
+          <h4>カテゴリ（クリックで変更）</h4>
           {entity.categories.map((cat) => {
             const val = state.categoryValues[cat.id]
             return (
@@ -81,11 +78,13 @@ export function DetailPanel({ entity, scenario, worldState }: Props) {
                     return (
                       <span
                         key={opt}
-                        className="state-badge"
+                        className="state-badge clickable"
                         style={{
                           borderColor: active ? 'var(--accent)' : 'var(--border)',
-                          opacity: active ? 1 : 0.4,
+                          opacity: active ? 1 : 0.5,
+                          cursor: 'pointer',
                         }}
+                        onClick={() => onSetCategory(entity.id, cat.id, opt)}
                       >
                         <span className={active ? 'cat-value' : 'cat-name'}>{opt}</span>
                       </span>
@@ -140,7 +139,7 @@ export function DetailPanel({ entity, scenario, worldState }: Props) {
         </div>
       )}
 
-      {/* Pending triggers (1 remaining condition) */}
+      {/* Pending triggers */}
       {pending.length > 0 && (
         <div className="pending-section">
           <div className="detail-section">
@@ -157,7 +156,7 @@ export function DetailPanel({ entity, scenario, worldState }: Props) {
         </div>
       )}
 
-      {/* Related logs */}
+      {/* Logs */}
       {relatedLogs.length > 0 && (
         <div className="log-section">
           <div className="detail-section">

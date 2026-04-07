@@ -181,6 +181,12 @@ body {
   border: 1px solid var(--border);
 }
 
+.state-badge.clickable:hover {
+  border-color: var(--accent-hover) !important;
+  opacity: 0.9 !important;
+  box-shadow: 0 0 4px rgba(79, 195, 247, 0.2);
+}
+
 .state-badge .cat-name {
   color: var(--text-muted);
 }

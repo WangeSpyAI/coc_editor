@@ -112,6 +112,41 @@ export function useScenario() {
     update({ ...sessionRef.current, worldState: result.worldState, lastResult: result })
   }, [update, cloneWorld])
 
+  /** KP直接操作: カテゴリ値を変更して stabilize */
+  const setCategoryValue = useCallback((entityId: string, categoryId: string, value: string) => {
+    if (!sessionRef.current) return
+    const { scenario } = sessionRef.current
+    const cloned = cloneWorld()
+    const es = cloned.entityStates[entityId]
+    if (!es) return
+
+    const entity = scenario.entities.find((e) => e.id === entityId)
+    const cat = entity?.categories.find((c) => c.id === categoryId)
+    if (!cat) return
+
+    if (cat.exclusive) {
+      if (es.categoryValues[categoryId] === value) return
+      es.categoryValues[categoryId] = value
+    } else {
+      const arr = Array.isArray(es.categoryValues[categoryId]) ? es.categoryValues[categoryId] as string[] : []
+      if (arr.includes(value)) {
+        es.categoryValues[categoryId] = arr.filter((v) => v !== value)
+      } else {
+        es.categoryValues[categoryId] = [...arr, value]
+      }
+    }
+
+    cloned.log.push({
+      timestamp: cloned.step,
+      type: 'system',
+      sourceEntityId: entityId,
+      description: `${entity?.name}: ${cat.name} → ${value}`,
+    })
+
+    const result = stabilize(cloned, scenario)
+    update({ ...sessionRef.current, worldState: result.worldState, lastResult: result })
+  }, [update, cloneWorld])
+
   // === Live scenario editing (リアルタイム執筆) ===
   //
   // These mutate the scenario AND patch the current world state.
@@ -304,6 +339,7 @@ export function useScenario() {
     loadScenario,
     selectEntity,
     doAction,
+    setCategoryValue,
     resetWorld,
     clearSession,
     // Live editing
