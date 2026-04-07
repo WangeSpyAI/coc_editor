@@ -145,7 +145,7 @@ export function App() {
       </div>
 
       {/* Main Panel */}
-      <div className="main-panel">
+      <div className={`main-panel${mobileTab === 'main' ? ' mobile-visible' : ''}`}>
         {mainView === 'graph' ? (
           <DependencyGraph
             scenario={scenario}
