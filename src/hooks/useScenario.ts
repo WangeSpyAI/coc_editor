@@ -1,10 +1,10 @@
 import { useState, useCallback, useRef } from 'react'
-import type { Scenario, WorldState, ReadonlyWorldState, Entity, Action, Effect, Trigger } from '../core/types'
+import type { Scenario, WorldState, ReadonlyWorldState, Entity, Action, Effect, Trigger, LogEntry } from '../core/types'
 import {
   initializeWorldState,
   stabilize,
-  applyActionEffects,
-  applyEffect,
+  applyActionEffects as engineApplyActionEffects,
+  applyEffect as engineApplyEffect,
   getPendingTriggers,
   buildChildrenMap,
   type StabilizeResult,
@@ -22,6 +22,25 @@ export interface ScenarioSession {
   worldState: ReadonlyWorldState
   selectedEntityId: string | null
   lastResult: StabilizeResult | null
+}
+
+/**
+ * mutateAndStabilize コールバックが受け取る制限付きAPI。
+ *
+ * 生の WorldState を渡さず、許可された操作だけを公開する。
+ * entityStates を直接触る道が存在しないので、間違えようがない。
+ */
+interface MutationAPI {
+  /** 現在の状態を読む（readonly — 書き込み不可） */
+  readonly worldState: ReadonlyWorldState
+  /** 単一の Effect を適用する */
+  applyEffect(effect: Effect, selfId: string): boolean
+  /** アクションの効果を適用する */
+  fireAction(actionId: string, actorId?: string, rollResult?: 'success' | 'failure'): boolean
+  /** 新しいエンティティの状態を初期化する */
+  initEntity(entityId: string, parentId: string | null, categoryValues: Record<string, string | string[]>): void
+  /** ログを追加する */
+  log(type: LogEntry['type'], sourceEntityId: string, description: string, actorId?: string): void
 }
 
 
@@ -81,20 +100,38 @@ export function useScenario() {
   //   mutateAndStabilize — WorldState を変更する操作（stabilize保証）
   //   mutateScenario     — Scenario だけ変更する操作（stabilize不要）
   //
-  // 第3の方法は存在しない。新しい操作関数を追加するときは
-  // 必ずどちらかを使うこと。
+  // 第3の方法は存在しない。
+  // コールバックは MutationAPI を受け取る。生の WorldState には触れない。
   // ====================================================================
 
-  /** WorldState変更パス: clone → mutate → stabilize → update */
+  /** WorldState変更パス: clone → MutationAPI構築 → コールバック → stabilize → update */
   const mutateAndStabilize = useCallback((
-    mutate: (worldState: WorldState, scenario: Scenario) => void,
+    mutate: (api: MutationAPI) => void,
     scenarioOverride?: Scenario,
   ) => {
     if (!sessionRef.current) return
     const scenario = scenarioOverride ?? sessionRef.current.scenario
-    const cloned = cloneWorld()
-    mutate(cloned, scenario)
-    const result = stabilize(cloned, scenario)
+    const ws = cloneWorld()
+    const childrenMap = buildChildrenMap(ws.entityStates)
+
+    const api: MutationAPI = {
+      get worldState() { return ws as unknown as ReadonlyWorldState },
+      applyEffect(effect, selfId) {
+        return engineApplyEffect(effect, selfId, ws.entityStates, scenario.entities, childrenMap)
+      },
+      fireAction(actionId, actorId, rollResult) {
+        return engineApplyActionEffects(actionId, ws, scenario, actorId, rollResult)
+      },
+      initEntity(entityId, parentId, categoryValues) {
+        ws.entityStates[entityId] = { entityId, parentId, categoryValues }
+      },
+      log(type, sourceEntityId, description, actorId) {
+        ws.log.push({ timestamp: ws.step, type, sourceEntityId, description, actorId })
+      },
+    }
+
+    mutate(api)
+    const result = stabilize(ws, scenario)
     update({
       ...sessionRef.current,
       scenario,
@@ -147,12 +184,12 @@ export function useScenario() {
   // === Action execution ===
 
   const doAction = useCallback((actionId: string, actorId?: string, rollResult?: 'success' | 'failure') => {
-    mutateAndStabilize((ws, scenario) => {
-      applyActionEffects(actionId, ws, scenario, actorId, rollResult)
+    mutateAndStabilize((api) => {
+      api.fireAction(actionId, actorId, rollResult)
     })
   }, [mutateAndStabilize])
 
-  /** KP直接操作: カテゴリ値を変更して stabilize（applyEffect経由） */
+  /** KP直接操作: カテゴリ値を変更して stabilize */
   const setCategoryValue = useCallback((entityId: string, categoryId: string, value: string) => {
     if (!sessionRef.current) return
     const { scenario } = sessionRef.current
@@ -161,38 +198,26 @@ export function useScenario() {
     const cat = entity?.categories.find((c) => c.id === categoryId)
     if (!entity || !cat) return
 
-    mutateAndStabilize((ws) => {
-      const states = ws.entityStates
-      const childrenMap = buildChildrenMap(states)
-
-      // Non-exclusive toggle-off: use removeCategory effect
+    mutateAndStabilize((api) => {
+      // Non-exclusive toggle-off
       if (!cat.exclusive) {
-        const arr = Array.isArray(states[entityId]?.categoryValues[categoryId])
-          ? states[entityId].categoryValues[categoryId] as string[]
-          : []
+        const val = api.worldState.entityStates[entityId]?.categoryValues[categoryId]
+        const arr = Array.isArray(val) ? val : []
         if (arr.includes(value)) {
-          applyEffect(
+          api.applyEffect(
             { type: 'removeCategory', target: { type: 'named', entityId }, categoryId, value },
-            entityId, states, scenario.entities, childrenMap,
+            entityId,
           )
-          ws.log.push({
-            timestamp: ws.step, type: 'system', sourceEntityId: entityId,
-            description: `${entity.name}: ${cat.name} − ${value}`,
-          })
+          api.log('system', entityId, `${entity.name}: ${cat.name} − ${value}`)
           return
         }
       }
 
-      // setCategory effect (exclusive: replace, non-exclusive: add)
-      applyEffect(
+      api.applyEffect(
         { type: 'setCategory', target: { type: 'named', entityId }, categoryId, value },
-        entityId, states, scenario.entities, childrenMap,
+        entityId,
       )
-
-      ws.log.push({
-        timestamp: ws.step, type: 'system', sourceEntityId: entityId,
-        description: `${entity.name}: ${cat.name} → ${value}`,
-      })
+      api.log('system', entityId, `${entity.name}: ${cat.name} → ${value}`)
     })
   }, [mutateAndStabilize])
 
@@ -213,16 +238,12 @@ export function useScenario() {
       entities: [...scenario.entities, newEntity],
     }
 
-    mutateAndStabilize((ws) => {
+    mutateAndStabilize((api) => {
       const categoryValues: Record<string, string | string[]> = {}
       for (const cat of newEntity.categories) {
         categoryValues[cat.id] = cat.exclusive ? (cat.options[0] ?? '') : []
       }
-      ws.entityStates[id] = {
-        entityId: id,
-        parentId: newEntity.parentId,
-        categoryValues,
-      }
+      api.initEntity(id, newEntity.parentId, categoryValues)
     }, newScenario)
     return id
   }, [mutateAndStabilize])
@@ -256,30 +277,18 @@ export function useScenario() {
       ),
     }
 
-    // New trigger might fire immediately → stabilize
+    // New trigger might fire immediately → stabilize (no mutation needed, just re-evaluate)
     mutateAndStabilize(() => {}, newScenario)
     return id
   }, [mutateAndStabilize])
 
   /** Execute ad-hoc effects (direct state manipulation) + stabilize */
   const applyAdHoc = useCallback((effects: Effect[], description: string) => {
-    if (!sessionRef.current) return
-    const { scenario } = sessionRef.current
-
-    mutateAndStabilize((ws) => {
-      const states = ws.entityStates
-      const childrenMap = buildChildrenMap(states)
-
+    mutateAndStabilize((api) => {
       for (const effect of effects) {
-        applyEffect(effect, '__adhoc__', states, scenario.entities, childrenMap)
+        api.applyEffect(effect, '__adhoc__')
       }
-
-      ws.log.push({
-        timestamp: ws.step,
-        type: 'action',
-        sourceEntityId: '__adhoc__',
-        description,
-      })
+      api.log('action', '__adhoc__', description)
     })
   }, [mutateAndStabilize])
 

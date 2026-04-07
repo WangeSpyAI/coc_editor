@@ -41,15 +41,27 @@ React + TypeScript. Components access engine through `useScenario` hook.
 ### 1. 状態変更は2つのパスしか存在しない
 
 ```
-mutateAndStabilize  — WorldState を変更する全操作（stabilize保証）
-mutateScenario      — Scenario だけを変更する操作（stabilize不要）
+mutateAndStabilize(api => { ... })  — WorldState を変更（stabilize保証）
+mutateScenario(scenario => { ... }) — Scenario だけ変更（stabilize不要）
 ```
 
-**第3の方法は存在しない。** 新しい操作関数を追加するときは必ずどちらかを使う。
-`update()` や `cloneWorld()` を直接呼ぶのは lifecycle 関数（loadScenario, resetWorld）のみ。
+**第3の方法は存在しない。**
 
-**なぜ**: stabilize 忘れを構造的に不可能にするため。
-clone→mutate→stabilize→update の手順を「覚えておく」必要がない。
+`mutateAndStabilize` のコールバックは `MutationAPI` を受け取る。
+生の `WorldState` にはアクセスできない。許可された操作だけが存在する:
+
+```typescript
+interface MutationAPI {
+  readonly worldState: ReadonlyWorldState  // 読める。書けない。
+  applyEffect(effect, selfId): boolean     // Effect 適用
+  fireAction(actionId, actorId?, rollResult?): boolean  // アクション発火
+  initEntity(entityId, parentId, categoryValues): void  // エンティティ初期化
+  log(type, sourceEntityId, description): void          // ログ追加
+}
+```
+
+**なぜ**: `entityStates[x].categoryValues[y] = z` と書く道がそもそもない。
+stabilize 忘れも不可能。「気をつける」「覚えておく」に依存しない。
 
 ### 2. UI層は ReadonlyWorldState しか見えない
 
