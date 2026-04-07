@@ -1,14 +1,12 @@
 import { useState, useCallback, useRef } from 'react'
-import type { Scenario, WorldState, Entity, Action, Effect, Trigger, Category } from '../core/types'
+import type { Scenario, WorldState, Entity, Action, Effect, Trigger } from '../core/types'
 import {
   initializeWorldState,
   stabilize,
   applyActionEffects,
   applyEffect,
-  getAvailableActions,
   getPendingTriggers,
   buildChildrenMap,
-  getDescendants,
   type StabilizeResult,
 } from '../core/engine'
 
@@ -244,53 +242,6 @@ export function useScenario() {
     return id
   }, [mutateAndStabilize])
 
-  /** Add a new option to an existing category */
-  const addCategoryOption = useCallback((entityId: string, categoryId: string, option: string) => {
-    if (!sessionRef.current) return
-    const { scenario } = sessionRef.current
-
-    const newScenario: Scenario = {
-      ...scenario,
-      entities: scenario.entities.map((e) =>
-        e.id === entityId
-          ? {
-              ...e,
-              categories: e.categories.map((c) =>
-                c.id === categoryId
-                  ? { ...c, options: c.options.includes(option) ? c.options : [...c.options, option] }
-                  : c,
-              ),
-            }
-          : e,
-      ),
-    }
-
-    update({ ...sessionRef.current, scenario: newScenario })
-  }, [update])
-
-  /** Add a new category to an entity (schema change + world state init + stabilize) */
-  const addCategory = useCallback((entityId: string, category: Omit<Category, 'id'> & { id?: string }): string => {
-    if (!sessionRef.current) return ''
-    const { scenario } = sessionRef.current
-    const id = category.id ?? genId('cat')
-    const newCat: Category = { ...category, id } as Category
-
-    const newScenario: Scenario = {
-      ...scenario,
-      entities: scenario.entities.map((e) =>
-        e.id === entityId ? { ...e, categories: [...e.categories, newCat] } : e,
-      ),
-    }
-
-    mutateAndStabilize((ws) => {
-      const es = ws.entityStates[entityId]
-      if (es && !(id in es.categoryValues)) {
-        es.categoryValues[id] = newCat.exclusive ? (newCat.options[0] ?? '') : []
-      }
-    }, newScenario)
-    return id
-  }, [mutateAndStabilize])
-
   /** Execute ad-hoc effects (direct state manipulation) + stabilize */
   const applyAdHoc = useCallback((effects: Effect[], description: string) => {
     if (!sessionRef.current) return
@@ -315,38 +266,6 @@ export function useScenario() {
 
   // === Derived helpers ===
 
-  const getEntityChildren = useCallback((entityId: string): Entity[] => {
-    if (!sessionRef.current) return []
-    const { scenario, worldState } = sessionRef.current
-    const childrenMap = buildChildrenMap(worldState.entityStates)
-    const childIds = childrenMap[entityId] ?? []
-    return childIds
-      .map((id) => scenario.entities.find((e) => e.id === id))
-      .filter((e): e is Entity => e !== undefined)
-  }, [])
-
-  const getEntityActions = useCallback((entityId: string): Action[] => {
-    if (!sessionRef.current) return []
-    return getAvailableActions(entityId, sessionRef.current.worldState, sessionRef.current.scenario)
-  }, [])
-
-  const getDescendantActions = useCallback((entityId: string): { entity: Entity; actions: Action[] }[] => {
-    if (!sessionRef.current) return []
-    const { scenario, worldState } = sessionRef.current
-    const childrenMap = buildChildrenMap(worldState.entityStates)
-    const descIds = [entityId, ...getDescendants(entityId, childrenMap)]
-    const result: { entity: Entity; actions: Action[] }[] = []
-    for (const id of descIds) {
-      const entity = scenario.entities.find((e) => e.id === id)
-      if (!entity) continue
-      const actions = getAvailableActions(id, worldState, scenario)
-      if (actions.length > 0) {
-        result.push({ entity, actions })
-      }
-    }
-    return result
-  }, [])
-
   const getPending = useCallback(() => {
     if (!sessionRef.current) return []
     return getPendingTriggers(sessionRef.current.worldState, sessionRef.current.scenario)
@@ -364,13 +283,8 @@ export function useScenario() {
     addEntity,
     addAction,
     addTrigger,
-    addCategory,
-    addCategoryOption,
     applyAdHoc,
     // Derived
-    getEntityChildren,
-    getEntityActions,
-    getDescendantActions,
     getPending,
   }
 }
