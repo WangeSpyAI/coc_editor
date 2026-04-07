@@ -80,7 +80,7 @@ export function EntityTree({ scenario, worldState, selectedId, onSelect }: Props
   }
 
   return (
-    <div className="sidebar">
+    <div className="entity-tree">
       {rootIds.map((id) => renderNode(id, 0))}
     </div>
   )
