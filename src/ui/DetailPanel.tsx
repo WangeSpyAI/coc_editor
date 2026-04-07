@@ -47,7 +47,7 @@ export function DetailPanel({ entity, scenario, worldState, onSetCategory }: Pro
   }
 
   return (
-    <div className="detail-panel">
+    <div className="detail-content">
       <h2>{entity.name}</h2>
       <p className="description">{entity.description}</p>
 

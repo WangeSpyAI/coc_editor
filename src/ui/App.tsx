@@ -135,7 +135,7 @@ export function App() {
       </div>
 
       {/* Sidebar: Entity Tree */}
-      <div className={`sidebar${mobileTab === 'tree' ? ' mobile-visible' : ''}`}>
+      <div className={`layout-sidebar${mobileTab === 'tree' ? ' mobile-visible' : ''}`}>
         <EntityTree
           scenario={scenario}
           worldState={worldState}
@@ -145,7 +145,7 @@ export function App() {
       </div>
 
       {/* Main Panel */}
-      <div className={`main-panel${mobileTab === 'main' ? ' mobile-visible' : ''}`}>
+      <div className={`layout-main${mobileTab === 'main' ? ' mobile-visible' : ''}`}>
         {mainView === 'graph' ? (
           <DependencyGraph
             scenario={scenario}
@@ -179,7 +179,7 @@ export function App() {
       </div>
 
       {/* Right: Detail Panel */}
-      <div className={`detail-panel${mobileTab === 'detail' ? ' mobile-visible' : ''}`}>
+      <div className={`layout-detail${mobileTab === 'detail' ? ' mobile-visible' : ''}`}>
         {selectedEntity ? (
           <DetailPanel
             entity={selectedEntity}
