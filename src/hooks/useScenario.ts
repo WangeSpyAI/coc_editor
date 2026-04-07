@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
-import type { Scenario, WorldState, ReadonlyWorldState, Entity, Action, Effect, Trigger, LogEntry } from '../core/types'
+import type { Scenario, WorldState, ReadonlyWorldState, Entity, Action, Effect, Trigger, LogEntry, Category } from '../core/types'
 import {
   initializeWorldState,
   stabilize,
@@ -21,7 +21,6 @@ const MAX_UNDO_HISTORY = 50
 export interface ScenarioSession {
   scenario: Scenario
   worldState: ReadonlyWorldState
-  selectedEntityId: string | null
   lastResult: StabilizeResult | null
 }
 
@@ -80,7 +79,11 @@ export function useScenario() {
   const sessionRef = useRef(session)
   sessionRef.current = session
 
-  // Undo 履歴: mutateAndStabilize が自動的にスナップショットを積む。
+  // selectedEntityId はUI状態 — セッションデータとは分離。
+  // undo/redo/永続化の対象外。commitMutationを通さない。
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null)
+
+  // Undo 履歴: commitMutation が自動的にスナップショットを積む。
   // 個別関数が「履歴に入れ忘れる」ことが構造的にない。
   const undoStackRef = useRef<ScenarioSession[]>([])
   const [canUndo, setCanUndo] = useState(false)
@@ -184,18 +187,13 @@ export function useScenario() {
     lifecycleReset({
       scenario,
       worldState: result.worldState,
-      selectedEntityId: null,
       lastResult: result,
     })
+    setSelectedEntityId(null)
   }, [lifecycleReset])
 
   const selectEntity = useCallback((id: string | null) => {
-    if (!sessionRef.current) return
-    // UI選択のみ — undo不要、commitMutationも不要
-    const next = { ...sessionRef.current, selectedEntityId: id }
-    sessionRef.current = next
-    setSession(next)
-    saveSession(next)
+    setSelectedEntityId(id)
   }, [])
 
   const resetWorld = useCallback(() => {
@@ -321,6 +319,182 @@ export function useScenario() {
     })
   }, [mutateAndStabilize])
 
+  // === Entity Update/Delete ===
+
+  /** Update entity properties (name, description, labels, parentId) */
+  const updateEntity = useCallback((entityId: string, patch: Partial<Pick<Entity, 'name' | 'description' | 'labels' | 'parentId'>>) => {
+    if (!sessionRef.current) return
+    const newScenario: Scenario = {
+      ...sessionRef.current.scenario,
+      entities: sessionRef.current.scenario.entities.map((e) =>
+        e.id === entityId ? { ...e, ...patch } : e,
+      ),
+    }
+    // parentId change affects world state
+    if ('parentId' in patch) {
+      mutateAndStabilize((api) => {
+        const es = api.worldState.entityStates[entityId]
+        if (es) api.initEntity(entityId, patch.parentId ?? null, { ...es.categoryValues } as Record<string, string | string[]>)
+      }, newScenario)
+    } else {
+      mutateScenario(() => newScenario)
+    }
+  }, [mutateAndStabilize, mutateScenario])
+
+  /** Remove entity + all children from scenario and world state */
+  const removeEntity = useCallback((entityId: string) => {
+    if (!sessionRef.current) return
+    const { scenario } = sessionRef.current
+
+    // Collect entity and all descendants
+    const toRemove = new Set<string>()
+    const collect = (id: string) => {
+      toRemove.add(id)
+      for (const e of scenario.entities) {
+        if (e.parentId === id) collect(e.id)
+      }
+    }
+    collect(entityId)
+
+    const newScenario: Scenario = {
+      ...scenario,
+      entities: scenario.entities.filter((e) => !toRemove.has(e.id)),
+    }
+
+    mutateAndStabilize(() => {}, newScenario)
+
+    // Clear selection if removed
+    if (toRemove.has(selectedEntityId ?? '')) setSelectedEntityId(null)
+  }, [mutateAndStabilize, selectedEntityId])
+
+  // === Category Definition CRUD ===
+
+  /** Add a category definition to an entity + initialize its world state value */
+  const addCategoryDef = useCallback((entityId: string, category: Omit<Category, 'id'> & { id?: string }): string => {
+    if (!sessionRef.current) return ''
+    const id = category.id ?? genId('cat')
+    const newCat: Category = { ...category, id } as Category
+
+    const newScenario: Scenario = {
+      ...sessionRef.current.scenario,
+      entities: sessionRef.current.scenario.entities.map((e) =>
+        e.id === entityId ? { ...e, categories: [...e.categories, newCat] } : e,
+      ),
+    }
+
+    mutateAndStabilize((api) => {
+      const es = api.worldState.entityStates[entityId]
+      if (es) {
+        const newValues = { ...es.categoryValues } as Record<string, string | string[]>
+        newValues[id] = newCat.exclusive ? (newCat.options[0] ?? '') : []
+        api.initEntity(entityId, es.parentId, newValues)
+      }
+    }, newScenario)
+    return id
+  }, [mutateAndStabilize])
+
+  /** Update a category definition (name, exclusive, options) */
+  const updateCategoryDef = useCallback((entityId: string, categoryId: string, patch: Partial<Pick<Category, 'name' | 'exclusive' | 'options'>>) => {
+    if (!sessionRef.current) return
+
+    const newScenario: Scenario = {
+      ...sessionRef.current.scenario,
+      entities: sessionRef.current.scenario.entities.map((e) =>
+        e.id === entityId
+          ? { ...e, categories: e.categories.map((c) => c.id === categoryId ? { ...c, ...patch } : c) }
+          : e,
+      ),
+    }
+
+    // If options changed, the current value might be invalid → re-initialize
+    mutateAndStabilize((api) => {
+      if (patch.options || patch.exclusive !== undefined) {
+        const es = api.worldState.entityStates[entityId]
+        if (es) {
+          const updatedCat = newScenario.entities.find((e) => e.id === entityId)?.categories.find((c) => c.id === categoryId)
+          if (updatedCat) {
+            const newValues = { ...es.categoryValues } as Record<string, string | string[]>
+            const currentVal = newValues[categoryId]
+            if (updatedCat.exclusive) {
+              // If current value not in options, reset to first
+              if (!updatedCat.options.includes(currentVal as string)) {
+                newValues[categoryId] = updatedCat.options[0] ?? ''
+              }
+            } else {
+              // Filter out values no longer in options
+              const arr = Array.isArray(currentVal) ? currentVal : []
+              newValues[categoryId] = arr.filter((v) => updatedCat.options.includes(v))
+            }
+            api.initEntity(entityId, es.parentId, newValues)
+          }
+        }
+      }
+    }, newScenario)
+  }, [mutateAndStabilize])
+
+  /** Remove a category definition from an entity */
+  const removeCategoryDef = useCallback((entityId: string, categoryId: string) => {
+    if (!sessionRef.current) return
+
+    const newScenario: Scenario = {
+      ...sessionRef.current.scenario,
+      entities: sessionRef.current.scenario.entities.map((e) =>
+        e.id === entityId ? { ...e, categories: e.categories.filter((c) => c.id !== categoryId) } : e,
+      ),
+    }
+
+    mutateAndStabilize((api) => {
+      const es = api.worldState.entityStates[entityId]
+      if (es) {
+        const newValues = { ...es.categoryValues } as Record<string, string | string[]>
+        delete newValues[categoryId]
+        api.initEntity(entityId, es.parentId, newValues)
+      }
+    }, newScenario)
+  }, [mutateAndStabilize])
+
+  // === Action/Trigger Delete ===
+
+  const removeAction = useCallback((entityId: string, actionId: string) => {
+    mutateScenario((scenario) => ({
+      ...scenario,
+      entities: scenario.entities.map((e) =>
+        e.id === entityId ? { ...e, actions: e.actions.filter((a) => a.id !== actionId) } : e,
+      ),
+    }))
+  }, [mutateScenario])
+
+  const removeTrigger = useCallback((entityId: string, triggerId: string) => {
+    if (!sessionRef.current) return
+    const newScenario: Scenario = {
+      ...sessionRef.current.scenario,
+      entities: sessionRef.current.scenario.entities.map((e) =>
+        e.id === entityId ? { ...e, triggers: e.triggers.filter((t) => t.id !== triggerId) } : e,
+      ),
+    }
+    mutateAndStabilize(() => {}, newScenario)
+  }, [mutateAndStabilize])
+
+  // === Scenario Create/Export ===
+
+  const createScenario = useCallback((title: string) => {
+    const scenario: Scenario = {
+      id: genId('scenario'),
+      title,
+      author: '',
+      description: '',
+      entities: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    loadScenario(scenario)
+  }, [loadScenario])
+
+  const exportScenario = useCallback((): string | null => {
+    if (!sessionRef.current) return null
+    return JSON.stringify(sessionRef.current.scenario, null, 2)
+  }, [])
+
   // === Undo (スタックから復元。commitMutationもlifecycleResetも通さない) ===
 
   const undo = useCallback(() => {
@@ -342,19 +516,32 @@ export function useScenario() {
 
   return {
     session,
+    selectedEntityId,
     canUndo,
     undo,
+    // Scenario lifecycle
+    createScenario,
     loadScenario,
-    selectEntity,
-    doAction,
-    setCategoryValue,
+    exportScenario,
     resetWorld,
     clearSession,
-    // Live editing
-    addEntity,
-    addAction,
-    addTrigger,
+    // UI state
+    selectEntity,
+    // World state changes
+    doAction,
+    setCategoryValue,
     applyAdHoc,
+    // Schema editing
+    addEntity,
+    updateEntity,
+    removeEntity,
+    addCategoryDef,
+    updateCategoryDef,
+    removeCategoryDef,
+    addAction,
+    removeAction,
+    addTrigger,
+    removeTrigger,
     // Derived
     getPending,
   }
