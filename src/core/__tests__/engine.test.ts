@@ -256,8 +256,12 @@ describe('stabilize（不動点計算）', () => {
     expect(result1.firedTriggers.length).toBe(0)
     expect(result1.reachedFixedPoint).toBe(true)
 
-    // 暗くする → 効果なしのトリガーは状態変更しないので発火記録されない
-    ws.entityStates['room'].categoryValues['light'] = '暗い'
+    // 暗くする（applyEffect経由） → 効果なしのトリガーは状態変更しないので発火記録されない
+    const map = buildChildrenMap(ws.entityStates)
+    applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: 'room' }, categoryId: 'light', value: '暗い' },
+      'room', ws.entityStates, entities, map,
+    )
     const result2 = stabilize(ws, scenario)
     expect(result2.firedTriggers.length).toBe(0)
     expect(result2.reachedFixedPoint).toBe(true)
@@ -304,8 +308,12 @@ describe('stabilize（不動点計算）', () => {
     const scenario = makeScenario(entities)
     const ws = initializeWorldState(scenario)
 
-    // A を暗くする
-    ws.entityStates['A'].categoryValues['light'] = '暗い'
+    // A を暗くする（applyEffect経由）
+    const map = buildChildrenMap(ws.entityStates)
+    applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: 'A' }, categoryId: 'light', value: '暗い' },
+      'A', ws.entityStates, entities, map,
+    )
     const result = stabilize(ws, scenario)
 
     expect(result.reachedFixedPoint).toBe(true)
@@ -336,7 +344,11 @@ describe('stabilize（不動点計算）', () => {
     const scenario = makeScenario(entities)
     const ws = initializeWorldState(scenario)
 
-    ws.entityStates['X'].categoryValues['state'] = 'on'
+    const map = buildChildrenMap(ws.entityStates)
+    applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: 'X' }, categoryId: 'state', value: 'on' },
+      'X', ws.entityStates, entities, map,
+    )
     const r1 = stabilize(ws, scenario)
     expect(r1.firedTriggers.length).toBe(1)
 

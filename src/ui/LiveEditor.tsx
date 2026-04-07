@@ -344,12 +344,16 @@ function EffectPicker({ scenario, effects, onChange }: {
   return (
     <>
       {effects.map((eff, i) => {
-        if (eff.type !== 'setCategory') return null
-        const ent = scenario.entities.find((e) => e.id === (eff.target as { entityId?: string }).entityId)
+        const targetEntityId = eff.target.type === 'named' ? eff.target.entityId : undefined
+        const ent = targetEntityId ? scenario.entities.find((e) => e.id === targetEntityId) : undefined
+        const label = eff.type === 'setCategory' ? `${ent?.name ?? '?'} / ${eff.categoryId} = ${eff.value}`
+          : eff.type === 'removeCategory' ? `${ent?.name ?? '?'} / ${eff.categoryId} − ${eff.value}`
+          : eff.type === 'move' ? `${ent?.name ?? '?'} → ${eff.newParentId}`
+          : '?'
         return (
           <div key={i} className="adhoc-row">
             <span style={{ fontSize: 12, flex: 1 }}>
-              {ent?.name ?? '?'} / {eff.categoryId} = {eff.value}
+              {label}
             </span>
             <button className="btn btn-sm btn-danger" onClick={() => onChange(effects.filter((_, j) => j !== i))}>x</button>
           </div>

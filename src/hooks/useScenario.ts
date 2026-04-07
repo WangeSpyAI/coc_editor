@@ -62,13 +62,34 @@ export function useScenario() {
     saveSession(next)
   }, [])
 
-  // Clone worldState for mutation
+  // Clone worldState for mutation (Set復元込み)
   const cloneWorld = useCallback((): WorldState => {
     const ws = sessionRef.current!.worldState
     const cloned = structuredClone(ws) as WorldState
     cloned.firedTriggerIds = new Set(ws.firedTriggerIds)
     return cloned
   }, [])
+
+  /**
+   * 状態変更の唯一のパス: clone → mutate → stabilize → update
+   * 個別の関数がstabilizeを忘れることを構造的に不可能にする。
+   */
+  const mutateAndStabilize = useCallback((
+    mutate: (worldState: WorldState, scenario: Scenario) => void,
+    scenarioOverride?: Scenario,
+  ) => {
+    if (!sessionRef.current) return
+    const scenario = scenarioOverride ?? sessionRef.current.scenario
+    const cloned = cloneWorld()
+    mutate(cloned, scenario)
+    const result = stabilize(cloned, scenario)
+    update({
+      ...sessionRef.current,
+      scenario,
+      worldState: result.worldState,
+      lastResult: result,
+    })
+  }, [update, cloneWorld])
 
   // === Session lifecycle ===
 
@@ -116,49 +137,45 @@ export function useScenario() {
   const setCategoryValue = useCallback((entityId: string, categoryId: string, value: string) => {
     if (!sessionRef.current) return
     const { scenario } = sessionRef.current
-    const cloned = cloneWorld()
 
     const entity = scenario.entities.find((e) => e.id === entityId)
     const cat = entity?.categories.find((c) => c.id === categoryId)
     if (!entity || !cat) return
 
-    const states = cloned.entityStates
-    const childrenMap = buildChildrenMap(states)
+    mutateAndStabilize((ws) => {
+      const states = ws.entityStates
+      const childrenMap = buildChildrenMap(states)
 
-    // Non-exclusive toggle-off: use removeCategory effect
-    if (!cat.exclusive) {
-      const arr = Array.isArray(states[entityId]?.categoryValues[categoryId])
-        ? states[entityId].categoryValues[categoryId] as string[]
-        : []
-      if (arr.includes(value)) {
-        applyEffect(
-          { type: 'removeCategory', target: { type: 'named', entityId }, categoryId, value },
-          entityId, states, scenario.entities, childrenMap,
-        )
-        cloned.log.push({
-          timestamp: cloned.step, type: 'system', sourceEntityId: entityId,
-          description: `${entity.name}: ${cat.name} − ${value}`,
-        })
-        const result = stabilize(cloned, scenario)
-        update({ ...sessionRef.current, worldState: result.worldState, lastResult: result })
-        return
+      // Non-exclusive toggle-off: use removeCategory effect
+      if (!cat.exclusive) {
+        const arr = Array.isArray(states[entityId]?.categoryValues[categoryId])
+          ? states[entityId].categoryValues[categoryId] as string[]
+          : []
+        if (arr.includes(value)) {
+          applyEffect(
+            { type: 'removeCategory', target: { type: 'named', entityId }, categoryId, value },
+            entityId, states, scenario.entities, childrenMap,
+          )
+          ws.log.push({
+            timestamp: ws.step, type: 'system', sourceEntityId: entityId,
+            description: `${entity.name}: ${cat.name} − ${value}`,
+          })
+          return
+        }
       }
-    }
 
-    // setCategory effect (exclusive: replace, non-exclusive: add)
-    applyEffect(
-      { type: 'setCategory', target: { type: 'named', entityId }, categoryId, value },
-      entityId, states, scenario.entities, childrenMap,
-    )
+      // setCategory effect (exclusive: replace, non-exclusive: add)
+      applyEffect(
+        { type: 'setCategory', target: { type: 'named', entityId }, categoryId, value },
+        entityId, states, scenario.entities, childrenMap,
+      )
 
-    cloned.log.push({
-      timestamp: cloned.step, type: 'system', sourceEntityId: entityId,
-      description: `${entity.name}: ${cat.name} → ${value}`,
+      ws.log.push({
+        timestamp: ws.step, type: 'system', sourceEntityId: entityId,
+        description: `${entity.name}: ${cat.name} → ${value}`,
+      })
     })
-
-    const result = stabilize(cloned, scenario)
-    update({ ...sessionRef.current, worldState: result.worldState, lastResult: result })
-  }, [update, cloneWorld])
+  }, [mutateAndStabilize])
 
   // === Live scenario editing (リアルタイム執筆) ===
   //
@@ -172,29 +189,24 @@ export function useScenario() {
     const id = entity.id ?? genId('entity')
     const newEntity: Entity = { ...entity, id } as Entity
 
-    // Patch scenario
     const newScenario: Scenario = {
       ...scenario,
       entities: [...scenario.entities, newEntity],
     }
 
-    // Patch world state (add EntityState without resetting)
-    const cloned = cloneWorld()
-    const categoryValues: Record<string, string | string[]> = {}
-    for (const cat of newEntity.categories) {
-      categoryValues[cat.id] = cat.exclusive ? (cat.options[0] ?? '') : []
-    }
-    cloned.entityStates[id] = {
-      entityId: id,
-      parentId: newEntity.parentId,
-      categoryValues,
-    }
-
-    // Stabilize with new scenario
-    const result = stabilize(cloned, newScenario)
-    update({ ...sessionRef.current, scenario: newScenario, worldState: result.worldState, lastResult: result })
+    mutateAndStabilize((ws) => {
+      const categoryValues: Record<string, string | string[]> = {}
+      for (const cat of newEntity.categories) {
+        categoryValues[cat.id] = cat.exclusive ? (cat.options[0] ?? '') : []
+      }
+      ws.entityStates[id] = {
+        entityId: id,
+        parentId: newEntity.parentId,
+        categoryValues,
+      }
+    }, newScenario)
     return id
-  }, [update, cloneWorld])
+  }, [mutateAndStabilize])
 
   /** Add a new action to an existing entity */
   const addAction = useCallback((entityId: string, action: Omit<Action, 'id' | 'entityId'> & { id?: string }): string => {
@@ -230,11 +242,9 @@ export function useScenario() {
     }
 
     // New trigger might fire immediately → stabilize
-    const cloned = cloneWorld()
-    const result = stabilize(cloned, newScenario)
-    update({ ...sessionRef.current, scenario: newScenario, worldState: result.worldState, lastResult: result })
+    mutateAndStabilize(() => {}, newScenario)
     return id
-  }, [update, cloneWorld])
+  }, [mutateAndStabilize])
 
   /** Add a new option to an existing category */
   const addCategoryOption = useCallback((entityId: string, categoryId: string, option: string) => {
@@ -274,41 +284,36 @@ export function useScenario() {
       ),
     }
 
-    // Initialize new category's default value (same pattern as initializeWorldState)
-    const cloned = cloneWorld()
-    const es = cloned.entityStates[entityId]
-    if (es && !(id in es.categoryValues)) {
-      es.categoryValues[id] = newCat.exclusive ? (newCat.options[0] ?? '') : []
-    }
-
-    // Stabilize — new category value may trigger existing triggers
-    const result = stabilize(cloned, newScenario)
-    update({ ...sessionRef.current, scenario: newScenario, worldState: result.worldState, lastResult: result })
+    mutateAndStabilize((ws) => {
+      const es = ws.entityStates[entityId]
+      if (es && !(id in es.categoryValues)) {
+        es.categoryValues[id] = newCat.exclusive ? (newCat.options[0] ?? '') : []
+      }
+    }, newScenario)
     return id
-  }, [update, cloneWorld])
+  }, [mutateAndStabilize])
 
   /** Execute ad-hoc effects (direct state manipulation) + stabilize */
   const applyAdHoc = useCallback((effects: Effect[], description: string) => {
     if (!sessionRef.current) return
     const { scenario } = sessionRef.current
-    const cloned = cloneWorld()
-    const states = cloned.entityStates
-    const childrenMap = buildChildrenMap(states)
 
-    for (const effect of effects) {
-      applyEffect(effect, '__adhoc__', states, scenario.entities, childrenMap)
-    }
+    mutateAndStabilize((ws) => {
+      const states = ws.entityStates
+      const childrenMap = buildChildrenMap(states)
 
-    cloned.log.push({
-      timestamp: cloned.step,
-      type: 'action',
-      sourceEntityId: '__adhoc__',
-      description,
+      for (const effect of effects) {
+        applyEffect(effect, '__adhoc__', states, scenario.entities, childrenMap)
+      }
+
+      ws.log.push({
+        timestamp: ws.step,
+        type: 'action',
+        sourceEntityId: '__adhoc__',
+        description,
+      })
     })
-
-    const result = stabilize(cloned, scenario)
-    update({ ...sessionRef.current, worldState: result.worldState, lastResult: result })
-  }, [update, cloneWorld])
+  }, [mutateAndStabilize])
 
   // === Derived helpers ===
 
