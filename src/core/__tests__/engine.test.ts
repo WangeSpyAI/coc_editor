@@ -38,11 +38,11 @@ function makeScenario(entities: Entity[]): Scenario {
 
 describe('ツリー操作', () => {
   const entities: Entity[] = [
-    { id: 'house', name: '館', parentId: null, description: '', labels: [], categories: [], actions: [], triggers: [] },
-    { id: 'entrance', name: '玄関', parentId: 'house', description: '', labels: [], categories: [], actions: [], triggers: [] },
-    { id: 'study', name: '書斎', parentId: 'house', description: '', labels: [], categories: [], actions: [], triggers: [] },
-    { id: 'desk', name: '机', parentId: 'study', description: '', labels: [], categories: [], actions: [], triggers: [] },
-    { id: 'npc-misaki', name: '美咲', parentId: 'entrance', description: '', labels: [], categories: [], actions: [], triggers: [] },
+    { id: 'house', name: '館', parentId: null, description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+    { id: 'entrance', name: '玄関', parentId: 'house', description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+    { id: 'study', name: '書斎', parentId: 'house', description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+    { id: 'desk', name: '机', parentId: 'study', description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+    { id: 'npc-misaki', name: '美咲', parentId: 'entrance', description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
   ]
   const scenario = makeScenario(entities)
   const ws = initializeWorldState(scenario)
@@ -82,14 +82,14 @@ describe('ツリー操作', () => {
 describe('条件評価', () => {
   const entities: Entity[] = [
     {
-      id: 'room', name: '部屋', parentId: null, description: '', labels: [],
+      id: 'room', name: '部屋', parentId: null, description: '', labels: [], connections: [],
       categories: [
         { id: 'light', name: '照明', exclusive: true, options: ['明るい', '暗い'] },
       ],
       actions: [], triggers: [],
     },
     {
-      id: 'npc', name: 'NPC', parentId: 'room', description: '', labels: [],
+      id: 'npc', name: 'NPC', parentId: 'room', description: '', labels: [], connections: [],
       categories: [
         { id: 'mood', name: '気分', exclusive: true, options: ['普通', '警戒', '敵対'] },
         { id: 'knowledge', name: '知識', exclusive: false, options: ['噂', '日記', '儀式'] },
@@ -159,14 +159,14 @@ describe('条件評価', () => {
 describe('効果適用', () => {
   const entities: Entity[] = [
     {
-      id: 'room', name: '部屋', parentId: null, description: '', labels: [],
+      id: 'room', name: '部屋', parentId: null, description: '', labels: [], connections: [],
       categories: [
         { id: 'light', name: '照明', exclusive: true, options: ['明るい', '暗い'] },
       ],
       actions: [], triggers: [],
     },
     {
-      id: 'npc', name: 'NPC', parentId: 'room', description: '', labels: [],
+      id: 'npc', name: 'NPC', parentId: 'room', description: '', labels: [], connections: [],
       categories: [
         { id: 'mood', name: '気分', exclusive: true, options: ['普通', '警戒', '敵対'] },
         { id: 'knowledge', name: '知識', exclusive: false, options: ['噂', '日記', '儀式'] },
@@ -233,7 +233,7 @@ describe('stabilize（不動点計算）', () => {
   it('条件が成立するトリガーが発火する', () => {
     const entities: Entity[] = [
       {
-        id: 'room', name: '部屋', parentId: null, description: '', labels: [],
+        id: 'room', name: '部屋', parentId: null, description: '', labels: [], connections: [],
         categories: [
           { id: 'light', name: '照明', exclusive: true, options: ['明るい', '暗い'] },
         ],
@@ -271,7 +271,7 @@ describe('stabilize（不動点計算）', () => {
     // A が暗い → B を警戒に → B が警戒 → C を赤に
     const entities: Entity[] = [
       {
-        id: 'A', name: 'A', parentId: null, description: '', labels: [],
+        id: 'A', name: 'A', parentId: null, description: '', labels: [], connections: [],
         categories: [{ id: 'light', name: '照明', exclusive: true, options: ['明るい', '暗い'] }],
         actions: [],
         triggers: [
@@ -285,7 +285,7 @@ describe('stabilize（不動点計算）', () => {
         ],
       },
       {
-        id: 'B', name: 'B', parentId: null, description: '', labels: [],
+        id: 'B', name: 'B', parentId: null, description: '', labels: [], connections: [],
         categories: [{ id: 'mood', name: '気分', exclusive: true, options: ['普通', '警戒'] }],
         actions: [],
         triggers: [
@@ -299,7 +299,7 @@ describe('stabilize（不動点計算）', () => {
         ],
       },
       {
-        id: 'C', name: 'C', parentId: null, description: '', labels: [],
+        id: 'C', name: 'C', parentId: null, description: '', labels: [], connections: [],
         categories: [{ id: 'color', name: '色', exclusive: true, options: ['青', '赤'] }],
         actions: [], triggers: [],
       },
@@ -325,7 +325,7 @@ describe('stabilize（不動点計算）', () => {
   it('firedOnce トリガーは一度だけ発火する', () => {
     const entities: Entity[] = [
       {
-        id: 'X', name: 'X', parentId: null, description: '', labels: [],
+        id: 'X', name: 'X', parentId: null, description: '', labels: [], connections: [],
         categories: [{ id: 'state', name: '状態', exclusive: true, options: ['off', 'on'] }],
         actions: [],
         triggers: [
@@ -361,7 +361,7 @@ describe('stabilize（不動点計算）', () => {
     // A=on → A=off, A=off → A=on の無限ループ
     const entities: Entity[] = [
       {
-        id: 'X', name: 'X', parentId: null, description: '', labels: [],
+        id: 'X', name: 'X', parentId: null, description: '', labels: [], connections: [],
         categories: [{ id: 's', name: 's', exclusive: true, options: ['on', 'off'] }],
         actions: [],
         triggers: [
@@ -397,7 +397,7 @@ describe('fireAction', () => {
   it('アクション発火後にstabilizeが走る', () => {
     const entities: Entity[] = [
       {
-        id: 'room', name: '部屋', parentId: null, description: '', labels: [],
+        id: 'room', name: '部屋', parentId: null, description: '', labels: [], connections: [],
         categories: [
           { id: 'light', name: '照明', exclusive: true, options: ['明るい', '暗い'] },
           { id: 'alarm', name: '警報', exclusive: true, options: ['off', 'on'] },
@@ -443,7 +443,7 @@ describe('getAvailableActions', () => {
   it('表示条件が成立するアクションのみ返す', () => {
     const entities: Entity[] = [
       {
-        id: 'door', name: '扉', parentId: null, description: '', labels: [],
+        id: 'door', name: '扉', parentId: null, description: '', labels: [], connections: [],
         categories: [
           { id: 'state', name: '状態', exclusive: true, options: ['閉', '開'] },
         ],
@@ -487,7 +487,7 @@ describe('getPendingTriggers', () => {
   it('残り1条件のトリガーを検出する', () => {
     const entities: Entity[] = [
       {
-        id: 'room', name: '部屋', parentId: null, description: '', labels: [],
+        id: 'room', name: '部屋', parentId: null, description: '', labels: [], connections: [],
         categories: [
           { id: 'light', name: '照明', exclusive: true, options: ['明るい', '暗い'] },
           { id: 'locked', name: '施錠', exclusive: true, options: ['施錠', '解錠'] },

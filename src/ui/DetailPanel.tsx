@@ -8,7 +8,7 @@ interface Props {
   scenario: Scenario
   worldState: ReadonlyWorldState
   onSetCategory: (entityId: string, categoryId: string, value: string) => void
-  onUpdateEntity: (entityId: string, patch: Partial<Pick<Entity, 'name' | 'description' | 'labels' | 'parentId'>>) => void
+  onUpdateEntity: (entityId: string, patch: Partial<Pick<Entity, 'name' | 'description' | 'labels' | 'parentId' | 'connections'>>) => void
   onRemoveEntity: (entityId: string) => void
   onAddCategoryDef: (entityId: string, category: Omit<Category, 'id'>) => string
   onUpdateCategoryDef: (entityId: string, categoryId: string, patch: Partial<Pick<Category, 'name' | 'exclusive' | 'options'>>) => void
@@ -82,6 +82,13 @@ export function DetailPanel({
       <EditableLabels
         labels={entity.labels}
         onCommit={(labels) => onUpdateEntity(entity.id, { labels })}
+      />
+
+      {/* Connections — adjacency for the map */}
+      <ConnectionEditor
+        entity={entity}
+        scenario={scenario}
+        onUpdate={(connections) => onUpdateEntity(entity.id, { connections })}
       />
 
       {/* Categories — the core editing experience */}
@@ -375,6 +382,55 @@ function CategoryEditor({ category, entityId, categoryValues, onSetCategory, onU
           }}
         />
       )}
+    </div>
+  )
+}
+
+function ConnectionEditor({ entity, scenario, onUpdate }: {
+  entity: Entity
+  scenario: Scenario
+  onUpdate: (connections: string[]) => void
+}) {
+  const otherEntities = useMemo(
+    () => scenario.entities.filter((e) => e.id !== entity.id),
+    [scenario.entities, entity.id],
+  )
+
+  return (
+    <div className="detail-section">
+      <h4>接続先（地図）</h4>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
+        {entity.connections.map((connId) => {
+          const target = scenario.entities.find((e) => e.id === connId)
+          return (
+            <span key={connId} className="state-badge" style={{ cursor: 'pointer' }}
+              onClick={() => onUpdate(entity.connections.filter((c) => c !== connId))}
+              title="クリックで削除"
+            >
+              <span className="cat-value">{target?.name ?? connId}</span>
+              <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>×</span>
+            </span>
+          )
+        })}
+      </div>
+      <select
+        value=""
+        onChange={(e) => {
+          if (e.target.value && !entity.connections.includes(e.target.value)) {
+            onUpdate([...entity.connections, e.target.value])
+          }
+        }}
+        style={{
+          background: 'var(--bg-card)', border: '1px solid var(--border)',
+          borderRadius: 'var(--radius)', color: 'var(--text)', padding: '3px 6px', fontSize: 11,
+        }}
+      >
+        <option value="">接続先を追加...</option>
+        {otherEntities
+          .filter((e) => !entity.connections.includes(e.id))
+          .map((e) => <option key={e.id} value={e.id}>{e.name}</option>)
+        }
+      </select>
     </div>
   )
 }

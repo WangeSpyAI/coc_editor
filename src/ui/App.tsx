@@ -5,11 +5,12 @@ import { EntityTree } from './EntityTree'
 import { LocationView } from './LocationView'
 import { DetailPanel } from './DetailPanel'
 import { DependencyGraph } from './DependencyGraph'
+import { MapView } from './MapView'
 import { LiveEditor } from './LiveEditor'
 import { sampleScenario } from '../core/sampleScenario'
 import type { Entity, Scenario } from '../core/types'
 
-type MainView = 'location' | 'graph'
+type MainView = 'location' | 'map' | 'graph'
 type MobileTab = 'tree' | 'main' | 'detail'
 
 export function App() {
@@ -165,10 +166,16 @@ export function App() {
             場所
           </button>
           <button
+            className={`view-tab${mainView === 'map' ? ' active' : ''}`}
+            onClick={() => setMainView('map')}
+          >
+            地図
+          </button>
+          <button
             className={`view-tab${mainView === 'graph' ? ' active' : ''}`}
             onClick={() => setMainView('graph')}
           >
-            依存グラフ
+            因果
           </button>
         </div>
 
@@ -197,7 +204,7 @@ export function App() {
           className={`mobile-tab${mobileTab === 'main' ? ' active' : ''}`}
           onClick={() => setMobileTab('main')}
         >
-          {mainView === 'graph' ? 'グラフ' : '場所'}
+          {mainView === 'graph' ? '因果' : mainView === 'map' ? '地図' : '場所'}
         </button>
         <button
           className={`mobile-tab${mobileTab === 'detail' ? ' active' : ''}`}
@@ -224,6 +231,13 @@ export function App() {
             scenario={scenario}
             worldState={worldState}
             onSelectEntity={handleNavigate}
+          />
+        ) : mainView === 'map' ? (
+          <MapView
+            scenario={scenario}
+            worldState={worldState}
+            onSelectEntity={handleNavigate}
+            selectedEntityId={selectedEntityId}
           />
         ) : selectedEntity ? (
           <>

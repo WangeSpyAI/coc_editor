@@ -50,6 +50,10 @@ function loadSession(): ScenarioSession | null {
     if (!json) return null
     const data = JSON.parse(json)
     data.worldState.firedTriggerIds = new Set(data.worldState.firedTriggerIds)
+    // Migrate: 古いデータに connections がない場合は補完
+    for (const e of data.scenario.entities) {
+      if (!e.connections) e.connections = []
+    }
     return data as ScenarioSession
   } catch {
     return null
@@ -321,8 +325,8 @@ export function useScenario() {
 
   // === Entity Update/Delete ===
 
-  /** Update entity properties (name, description, labels, parentId) */
-  const updateEntity = useCallback((entityId: string, patch: Partial<Pick<Entity, 'name' | 'description' | 'labels' | 'parentId'>>) => {
+  /** Update entity properties (name, description, labels, parentId, connections) */
+  const updateEntity = useCallback((entityId: string, patch: Partial<Pick<Entity, 'name' | 'description' | 'labels' | 'parentId' | 'connections'>>) => {
     if (!sessionRef.current) return
     const newScenario: Scenario = {
       ...sessionRef.current.scenario,

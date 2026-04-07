@@ -248,6 +248,7 @@ function EntityEditor({ scenario, selectedEntityId, onAdd, onClose }: {
       parentId: parentId || null,
       description,
       labels: labels.split(/[,、\s]+/).filter(Boolean),
+      connections: [],
       categories: [],
       actions: [],
       triggers: [],

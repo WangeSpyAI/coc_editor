@@ -17,6 +17,7 @@ export interface Entity {
   parentId: string | null // null = ルート
   description: string
   labels: string[] // 勢力図ビュー等でパースされる自由ラベル
+  connections: string[] // 隣接するエンティティID（場所間の接続。双方向は両方に追加）
   categories: Category[]
   actions: Action[]
   triggers: Trigger[]
