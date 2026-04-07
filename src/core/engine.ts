@@ -324,20 +324,23 @@ export function getAvailableActions(
 }
 
 /**
- * アクションを発火し、stabilize する。
+ * アクションの効果を適用する（stabilize は呼ばない）。
+ * 呼び出し元が mutateAndStabilize 経由で stabilize を保証する。
  *
  * rollResult:
  *   - undefined: ロール不要（rollRequirementなし）またはロールなしで実行
  *   - 'success': ロール成功 → effects + successEffects
  *   - 'failure': ロール失敗 → failureEffects のみ
+ *
+ * @returns false if action not found
  */
-export function fireAction(
+export function applyActionEffects(
   actionId: string,
   worldState: WorldState,
   scenario: Scenario,
   actorId?: string,
   rollResult?: 'success' | 'failure',
-): StabilizeResult {
+): boolean {
   // アクションを探す
   let action: Action | undefined
   let ownerEntity: Entity | undefined
@@ -350,9 +353,7 @@ export function fireAction(
     }
   }
 
-  if (!action || !ownerEntity) {
-    return { worldState, firedTriggers: [], reachedFixedPoint: true }
-  }
+  if (!action || !ownerEntity) return false
 
   const states = worldState.entityStates
   const childrenMap = buildChildrenMap(states)
@@ -396,7 +397,22 @@ export function fireAction(
     actorId,
   })
 
-  // stabilize
+  return true
+}
+
+/**
+ * アクションを発火し、stabilize する。
+ * テストや外部からの一括操作向け便利関数。
+ * UI層は mutateAndStabilize + applyActionEffects を使うこと。
+ */
+export function fireAction(
+  actionId: string,
+  worldState: WorldState,
+  scenario: Scenario,
+  actorId?: string,
+  rollResult?: 'success' | 'failure',
+): StabilizeResult {
+  applyActionEffects(actionId, worldState, scenario, actorId, rollResult)
   return stabilize(worldState, scenario)
 }
 

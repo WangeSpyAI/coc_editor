@@ -3,7 +3,7 @@ import type { Scenario, WorldState, Entity, Action, Effect, Trigger, Category } 
 import {
   initializeWorldState,
   stabilize,
-  fireAction,
+  applyActionEffects,
   applyEffect,
   getAvailableActions,
   getPendingTriggers,
@@ -126,12 +126,10 @@ export function useScenario() {
   // === Action execution ===
 
   const doAction = useCallback((actionId: string, actorId?: string, rollResult?: 'success' | 'failure') => {
-    if (!sessionRef.current) return
-    const { scenario } = sessionRef.current
-    const cloned = cloneWorld()
-    const result = fireAction(actionId, cloned, scenario, actorId, rollResult)
-    update({ ...sessionRef.current, worldState: result.worldState, lastResult: result })
-  }, [update, cloneWorld])
+    mutateAndStabilize((ws, scenario) => {
+      applyActionEffects(actionId, ws, scenario, actorId, rollResult)
+    })
+  }, [mutateAndStabilize])
 
   /** KP直接操作: カテゴリ値を変更して stabilize（applyEffect経由） */
   const setCategoryValue = useCallback((entityId: string, categoryId: string, value: string) => {
