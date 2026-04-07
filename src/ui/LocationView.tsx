@@ -1,12 +1,12 @@
 import { useMemo } from 'react'
-import type { Entity, WorldState, Scenario, Action } from '../core/types'
+import type { Entity, ReadonlyWorldState, Scenario, Action } from '../core/types'
 import { buildChildrenMap, getDescendants, getAvailableActions } from '../core/engine'
 import { StateBadges } from './StateBadges'
 
 interface Props {
   entity: Entity
   scenario: Scenario
-  worldState: WorldState
+  worldState: ReadonlyWorldState
   onAction: (actionId: string, rollResult?: 'success' | 'failure') => void
   onNavigate: (entityId: string) => void
   onSetCategory: (entityId: string, categoryId: string, value: string) => void

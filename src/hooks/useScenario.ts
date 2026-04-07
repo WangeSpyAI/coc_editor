@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
-import type { Scenario, WorldState, Entity, Action, Effect, Trigger } from '../core/types'
+import type { Scenario, WorldState, ReadonlyWorldState, Entity, Action, Effect, Trigger } from '../core/types'
 import {
   initializeWorldState,
   stabilize,
@@ -12,12 +12,18 @@ import {
 
 const STORAGE_KEY = 'scenario_editor_data'
 
+/**
+ * 外部公開用セッション型。
+ * worldState は ReadonlyWorldState — コンポーネントは読み取り専用。
+ * 状態変更は useScenario のコールバック（doAction, setCategoryValue等）経由のみ。
+ */
 export interface ScenarioSession {
   scenario: Scenario
-  worldState: WorldState
+  worldState: ReadonlyWorldState
   selectedEntityId: string | null
   lastResult: StabilizeResult | null
 }
+
 
 function loadSession(): ScenarioSession | null {
   try {
@@ -68,10 +74,18 @@ export function useScenario() {
     return cloned
   }, [])
 
-  /**
-   * 状態変更の唯一のパス: clone → mutate → stabilize → update
-   * 個別の関数がstabilizeを忘れることを構造的に不可能にする。
-   */
+  // ====================================================================
+  // 全操作はこの2つのヘルパーのどちらかを経由する。
+  // update() と cloneWorld() は直接呼ばない（lifecycle関数を除く）。
+  //
+  //   mutateAndStabilize — WorldState を変更する操作（stabilize保証）
+  //   mutateScenario     — Scenario だけ変更する操作（stabilize不要）
+  //
+  // 第3の方法は存在しない。新しい操作関数を追加するときは
+  // 必ずどちらかを使うこと。
+  // ====================================================================
+
+  /** WorldState変更パス: clone → mutate → stabilize → update */
   const mutateAndStabilize = useCallback((
     mutate: (worldState: WorldState, scenario: Scenario) => void,
     scenarioOverride?: Scenario,
@@ -88,6 +102,15 @@ export function useScenario() {
       lastResult: result,
     })
   }, [update, cloneWorld])
+
+  /** Scenario変更パス: scenario だけ差し替え、WorldState は触らない */
+  const mutateScenario = useCallback((
+    mutate: (scenario: Scenario) => Scenario,
+  ) => {
+    if (!sessionRef.current) return
+    const newScenario = mutate(sessionRef.current.scenario)
+    update({ ...sessionRef.current, scenario: newScenario })
+  }, [update])
 
   // === Session lifecycle ===
 
@@ -204,24 +227,20 @@ export function useScenario() {
     return id
   }, [mutateAndStabilize])
 
-  /** Add a new action to an existing entity */
+  /** Add a new action to an existing entity (schema-only, no stabilize) */
   const addAction = useCallback((entityId: string, action: Omit<Action, 'id' | 'entityId'> & { id?: string }): string => {
     if (!sessionRef.current) return ''
-    const { scenario } = sessionRef.current
     const id = action.id ?? genId('action')
     const newAction: Action = { ...action, id, entityId } as Action
 
-    const newScenario: Scenario = {
+    mutateScenario((scenario) => ({
       ...scenario,
       entities: scenario.entities.map((e) =>
         e.id === entityId ? { ...e, actions: [...e.actions, newAction] } : e,
       ),
-    }
-
-    // Actions don't change world state, just scenario
-    update({ ...sessionRef.current, scenario: newScenario })
+    }))
     return id
-  }, [update])
+  }, [mutateScenario])
 
   /** Add a new trigger to an existing entity, then stabilize */
   const addTrigger = useCallback((entityId: string, trigger: Omit<Trigger, 'id' | 'entityId'> & { id?: string }): string => {

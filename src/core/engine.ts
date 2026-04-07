@@ -9,6 +9,7 @@ import type {
   Entity,
   EntityState,
   WorldState,
+  ReadonlyWorldState,
   Scenario,
   TriggerCondition,
   ConditionClause,
@@ -18,12 +19,19 @@ import type {
   Action,
 } from './types'
 
+import type { ReadonlyEntityState } from './types'
+
+// ===== 読み取り専用エイリアス =====
+// クエリ関数が ReadonlyWorldState を受け取れるように。
+// mutation関数は引き続き Record<string, EntityState> を使う。
+type ReadonlyStates = Readonly<Record<string, ReadonlyEntityState>>
+
 const MAX_STABILIZE_STEPS = 100
 
 // ===== ツリー操作 =====
 
 /** 親→子のマップを構築 */
-export function buildChildrenMap(states: Record<string, EntityState>): Record<string, string[]> {
+export function buildChildrenMap(states: ReadonlyStates): Record<string, string[]> {
   const map: Record<string, string[]> = {}
   for (const [id, s] of Object.entries(states)) {
     const pid = s.parentId ?? '__root__'
@@ -34,7 +42,7 @@ export function buildChildrenMap(states: Record<string, EntityState>): Record<st
 }
 
 /** 祖先を上方向に辿る（自身は含まない） */
-export function getAncestors(entityId: string, states: Record<string, EntityState>): string[] {
+export function getAncestors(entityId: string, states: ReadonlyStates): string[] {
   const result: string[] = []
   let current = states[entityId]?.parentId
   while (current && states[current]) {
@@ -62,7 +70,7 @@ export function getDescendants(
 /** 同位（同じ親を持つ、自身除く） */
 export function getSiblings(
   entityId: string,
-  states: Record<string, EntityState>,
+  states: ReadonlyStates,
   childrenMap: Record<string, string[]>,
 ): string[] {
   const pid = states[entityId]?.parentId ?? '__root__'
@@ -75,7 +83,7 @@ export function getSiblings(
 export function resolveReference(
   ref: EntityReference,
   selfId: string,
-  states: Record<string, EntityState>,
+  states: ReadonlyStates,
   childrenMap: Record<string, string[]>,
 ): string[] {
   switch (ref.type) {
@@ -98,8 +106,8 @@ export function resolveReference(
 export function evaluateClause(
   clause: ConditionClause,
   selfId: string,
-  states: Record<string, EntityState>,
-  _entities: Entity[],
+  states: ReadonlyStates,
+  _entities: readonly Entity[],
   childrenMap: Record<string, string[]>,
 ): boolean {
   const targetIds = resolveReference(clause.reference, selfId, states, childrenMap)
@@ -132,8 +140,8 @@ export function evaluateClause(
 export function evaluateCondition(
   condition: TriggerCondition,
   selfId: string,
-  states: Record<string, EntityState>,
-  entities: Entity[],
+  states: ReadonlyStates,
+  entities: readonly Entity[],
   childrenMap: Record<string, string[]>,
 ): boolean {
   return condition.clauses.every((clause) =>
@@ -308,7 +316,7 @@ export function stabilize(
 /** アクションの表示条件を評価し、利用可能なアクションを返す */
 export function getAvailableActions(
   entityId: string,
-  worldState: WorldState,
+  worldState: ReadonlyWorldState,
   scenario: Scenario,
 ): Action[] {
   const entity = scenario.entities.find((e) => e.id === entityId)
@@ -454,7 +462,7 @@ export function initializeWorldState(scenario: Scenario): WorldState {
 /** エンティティのツリー構造を返す */
 export function getChildren(
   entityId: string,
-  states: Record<string, EntityState>,
+  states: ReadonlyStates,
 ): string[] {
   return Object.entries(states)
     .filter(([, s]) => s.parentId === entityId)
@@ -463,7 +471,7 @@ export function getChildren(
 
 /** 待機中トリガー: 条件が部分充足（残り1つ）のトリガーを検出 */
 export function getPendingTriggers(
-  worldState: WorldState,
+  worldState: ReadonlyWorldState,
   scenario: Scenario,
 ): { trigger: Trigger; entity: Entity; unmetClauses: ConditionClause[] }[] {
   const states = worldState.entityStates

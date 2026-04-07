@@ -1,12 +1,12 @@
 import { useMemo } from 'react'
-import type { Entity, WorldState, Scenario, ConditionClause } from '../core/types'
+import type { Entity, ReadonlyWorldState, Scenario, ConditionClause } from '../core/types'
 import { getPendingTriggers } from '../core/engine'
 import { StateBadges } from './StateBadges'
 
 interface Props {
   entity: Entity
   scenario: Scenario
-  worldState: WorldState
+  worldState: ReadonlyWorldState
   onSetCategory: (entityId: string, categoryId: string, value: string) => void
 }
 

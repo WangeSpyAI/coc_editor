@@ -12,67 +12,145 @@ stabilize（不動点計算）で因果連鎖を自動解決する。
 Pure functions. Framework-independent. Fully testable with Vitest.
 
 - `types.ts` — Entity, Category, Trigger, Action, Effect, WorldState, Scenario
-- `engine.ts` — Tree operations, condition evaluation, effect application, stabilize, fireAction
+- `engine.ts` — Tree operations, condition evaluation, effect application, stabilize
 - `sampleScenario.ts` — Demo scenario for development
-
-Key concepts:
-- **Entity Tree**: All entities (locations, NPCs, items) in parent-child tree. parentId = containment.
-- **Categories**: State axes. Exclusive (enum, one value) or non-exclusive (flags, multiple values).
-- **Triggers**: Auto-fire rules. Condition (AND of clauses) → Effects. Chain until fixed point.
-- **Actions**: Manual operations with display conditions and effects.
-- **Stabilize**: Scan all triggers, apply matching, repeat until no changes. MAX_STABILIZE_STEPS = 100.
-- **References**: self, ancestor, descendant, sibling, named — resolve to entity IDs for conditions/effects.
 
 ### UI Layer (`src/ui/`, `src/hooks/`)
 React + TypeScript. Components access engine through `useScenario` hook.
 
 - `hooks/useScenario.ts` — Engine wrapper with React state, localStorage persistence, action dispatch
 - `ui/App.tsx` — 3-column layout: tree | location view | detail panel
-- `ui/EntityTree.tsx` — Collapsible tree of all entities
-- `ui/LocationView.tsx` — Main KP view: selected entity + descendant actions aggregated
-- `ui/DetailPanel.tsx` — All categories, triggers, pending triggers, logs for selected entity
-- `ui/styles.css` — Dark theme CSS
+- `ui/StateBadges.tsx` — Clickable state badges (single-source component)
+- `ui/LocationView.tsx` — Main KP view
+- `ui/DetailPanel.tsx` — Entity detail panel
+- `ui/EntityTree.tsx` — Collapsible tree sidebar
+- `ui/DependencyGraph.tsx` — Trigger chain visualization
+- `ui/LiveEditor.tsx` — Real-time scenario authoring
 
-### Testing
+### Testing (`npm test`)
+- Engine logic: `src/core/__tests__/engine.test.ts`
+- Build: `npm run build` — TypeScript type-checking + production bundle
 
-#### Unit Tests (`npm test`)
-- Engine logic: `src/core/__tests__/engine.test.ts` — 18 tests
-- Covers: tree ops, condition eval, effect application, stabilize (chains, firedOnce, oscillation), fireAction, getAvailableActions, getPendingTriggers
+---
 
-#### Build (`npm run build`)
-- `tsc -b && vite build` — TypeScript type-checking + production bundle
+## Architectural Invariants（絶対に破らないルール）
 
-## Design Principles
+以下は「なんとなくのガイドライン」ではなく、コードの構造的安全性を保証する不変条件。
+違反するとバグが入る。例外なし。
 
-### 1. Engine is Pure
-Engine functions take data in, return data out. No side effects, no framework deps.
-All state mutation happens through `stabilize` and `fireAction`.
+### 1. 状態変更は2つのパスしか存在しない
 
-### 2. Stabilize Semantics
+```
+mutateAndStabilize  — WorldState を変更する全操作（stabilize保証）
+mutateScenario      — Scenario だけを変更する操作（stabilize不要）
+```
+
+**第3の方法は存在しない。** 新しい操作関数を追加するときは必ずどちらかを使う。
+`update()` や `cloneWorld()` を直接呼ぶのは lifecycle 関数（loadScenario, resetWorld）のみ。
+
+**なぜ**: stabilize 忘れを構造的に不可能にするため。
+clone→mutate→stabilize→update の手順を「覚えておく」必要がない。
+
+### 2. UI層は ReadonlyWorldState しか見えない
+
+```typescript
+// types.ts
+export type ReadonlyWorldState = { readonly entityStates: ...; readonly log: ...; ... }
+```
+
+コンポーネントの Props には `ReadonlyWorldState` を使う。`WorldState`（mutable版）は使わない。
+エンジンの mutation 関数（`applyEffect`, `stabilize`）は mutable `WorldState` を取る。
+エンジンの query 関数（`getAvailableActions`, `getPendingTriggers`）は `ReadonlyWorldState` を取る。
+
+**なぜ**: コンポーネントが `ws.entityStates[x].categoryValues[y] = z` と直接書き換えることを
+TypeScript コンパイラが防ぐ。「気をつける」必要がない。
+
+### 3. 状態変更は applyEffect 経由のみ
+
+`categoryValues` を直接操作してはならない。テストも含む。
+
+```typescript
+// ✗ 禁止
+ws.entityStates['room'].categoryValues['light'] = '暗い'
+
+// ✓ 正解
+applyEffect(
+  { type: 'setCategory', target: { type: 'named', entityId: 'room' }, categoryId: 'light', value: '暗い' },
+  'room', ws.entityStates, entities, map,
+)
+```
+
+**なぜ**: テストと本番が同じコードパスを通ることを保証するため。
+テストだけ通って本番でバグる、を防ぐ。
+
+### 4. Effect 型は自動導出、switch は exhaustiveness check
+
+```typescript
+// types.ts — 手動 enum 禁止。Effect union から自動導出。
+export type EffectType = Effect['type']
+
+// engine.ts — 全 switch に default: never
+default: {
+  const _exhaustive: never = effect
+  throw new Error(`Unknown effect type: ${(_exhaustive as Effect).type}`)
+}
+```
+
+**なぜ**: 新しい Effect type を追加したとき、処理し忘れた箇所をコンパイラが検出する。
+
+### 5. 1つの概念 = 1つのコンポーネント
+
+同じ概念を2箇所で描画するなら、共通コンポーネントに抽出してから使う。
+
+```
+StateBadges    — クリッカブル状態バッジ（LocationView, DetailPanel で共用）
+EffectPicker   — 効果選択UI（LiveEditor 内で共用）
+ConditionPicker — 条件選択UI（LiveEditor 内で共用）
+```
+
+**なぜ**: 片方だけ変更してバグになるパターンを構造的に排除する。
+
+### 6. 使われていないコードは書かない
+
+hook が返す関数は、必ず1つ以上のコンポーネントで使われていること。
+「将来使うかも」で書かない。必要になったら `mutateAndStabilize` パターンで追加する。
+
+**なぜ**: デッドコードは認知負荷を上げ、「これ使っていいのか」の判断コストが発生する。
+
+---
+
+## Design Concepts
+
+### Petri Net Semantics
+- **Entity Tree**: All entities (locations, NPCs, items) in parent-child tree. parentId = containment.
+- **Categories**: State axes. Exclusive (enum, one value) or non-exclusive (flags, multiple values).
+- **Triggers**: Auto-fire rules. Condition (AND of clauses) → Effects. Chain until fixed point.
+- **Actions**: Manual operations with display conditions, effects, and optional roll requirements.
+- **Stabilize**: Scan all triggers, apply matching, repeat until no changes. MAX_STABILIZE_STEPS = 100.
+- **References**: self, ancestor, descendant, sibling, named — resolve to entity IDs.
+
+### Roll Judgment
+エンジンはダイスを振らない。KPが成功/失敗を入力する。
+- Success → base effects + successEffects
+- Failure → failureEffects only
+- Prerequisites (item possession) ≠ rolls (skill checks). 別の概念。
+
+### Category Semantics
+- Exclusive: single string value, `setCategory` replaces
+- Non-exclusive: string array, `setCategory` adds, `removeCategory` removes
+
+### Stabilize Semantics
 - Triggers only record as "fired" when effects actually change state (or firedOnce)
 - No-op triggers don't count as changes — prevents infinite loops from idempotent rules
 - `reachedFixedPoint: false` signals oscillation (MAX_STABILIZE_STEPS reached)
 
-### 3. Reference Resolution
-Conditions and effects use EntityReference to specify targets:
-- `self` — the entity owning the trigger/action
-- `ancestor` — up the parent chain
-- `descendant` — down the children tree
-- `sibling` — same parent, excluding self
-- `named` — specific entity by ID
+---
 
-### 4. Category Semantics
-- Exclusive: single string value, `setCategory` replaces
-- Non-exclusive: string array, `setCategory` adds, `removeCategory` removes
+## Adding New Features — Checklist
 
-### 5. UI State Management
-- `useScenario` hook owns all state (scenario + worldState + selection)
-- Session persisted to localStorage as JSON (Set → Array for serialization)
-- World state reset re-initializes from scenario + stabilize
-
-## Common Pitfalls
-
-- Forgetting to deep-clone WorldState before mutation (structuredClone + Set restore)
-- Adding effects that create oscillation (A→B→A) — stabilize detects but doesn't resolve
-- Non-exclusive category: setCategory adds, doesn't replace — use removeCategory first if needed
-- EntityReference resolution returns empty array if entity doesn't exist — effects silently skip
+新しい操作を追加するとき:
+1. WorldState を変える？ → `mutateAndStabilize` を使う
+2. Scenario だけ変える？ → `mutateScenario` を使う
+3. 新しい Effect type？ → `Effect` union に追加 → `applyEffect` の switch に追加（never が強制）
+4. 新しいUI表示？ → 既存コンポーネントで表現できないか確認 → 新規なら共通コンポーネント化
+5. テスト書く？ → `applyEffect` 経由で状態変更。直接 `categoryValues` 操作は禁止

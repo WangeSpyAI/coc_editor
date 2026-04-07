@@ -1,10 +1,10 @@
 import { useState, useMemo, useCallback } from 'react'
-import type { Entity, WorldState, Scenario } from '../core/types'
+import type { Entity, ReadonlyWorldState, Scenario } from '../core/types'
 import { buildChildrenMap } from '../core/engine'
 
 interface Props {
   scenario: Scenario
-  worldState: WorldState
+  worldState: ReadonlyWorldState
   selectedId: string | null
   onSelect: (id: string) => void
 }

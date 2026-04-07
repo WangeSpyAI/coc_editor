@@ -1,9 +1,9 @@
 import { useMemo, useRef, useCallback } from 'react'
-import type { Entity, Scenario, WorldState, Trigger, ConditionClause } from '../core/types'
+import type { Entity, Scenario, ReadonlyWorldState, Trigger, ConditionClause } from '../core/types'
 
 interface Props {
   scenario: Scenario
-  worldState: WorldState
+  worldState: ReadonlyWorldState
   onSelectEntity: (id: string) => void
 }
 

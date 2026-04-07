@@ -140,12 +140,36 @@ export interface Scenario {
 
 // ===== ワールド状態（セッション中） =====
 
+/**
+ * エンジン内部で使用する可変版。
+ * UI層には ReadonlyWorldState を公開すること。
+ */
 export interface WorldState {
   scenarioId: string
   entityStates: Record<string, EntityState>
   firedTriggerIds: Set<string> // firedOnce トリガーの発火済みセット
   log: LogEntry[] // 描写ログ
   step: number // stabilize のステップカウンタ
+}
+
+/** EntityState の完全読み取り専用版 */
+export type ReadonlyEntityState = {
+  readonly entityId: string
+  readonly parentId: string | null
+  readonly categoryValues: Readonly<Record<string, string | readonly string[]>>
+}
+
+/**
+ * UI層向け読み取り専用ビュー。
+ * コンポーネントはこの型でWorldStateを受け取る。
+ * 状態変更は useScenario のコールバック経由でのみ行う。
+ */
+export type ReadonlyWorldState = {
+  readonly scenarioId: string
+  readonly entityStates: Readonly<Record<string, ReadonlyEntityState>>
+  readonly firedTriggerIds: ReadonlySet<string>
+  readonly log: readonly LogEntry[]
+  readonly step: number
 }
 
 export interface LogEntry {

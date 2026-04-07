@@ -1,8 +1,8 @@
 import type { Category } from '../core/types'
 
 interface Props {
-  categories: Category[]
-  categoryValues: Record<string, string | string[]>
+  categories: readonly Category[]
+  categoryValues: Readonly<Record<string, string | readonly string[]>>
   entityId: string
   onSetCategory: (entityId: string, categoryId: string, value: string) => void
   compact?: boolean // true = 子エンティティ用の小さいバッジ
