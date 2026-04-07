@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { Entity, WorldState, Scenario, Action } from '../core/types'
 import { buildChildrenMap, getDescendants, getAvailableActions } from '../core/engine'
+import { StateBadges } from './StateBadges'
 
 interface Props {
   entity: Entity
@@ -52,47 +53,21 @@ export function LocationView({ entity, scenario, worldState, onAction, onNavigat
     return result
   }, [entity.id, childrenMap, entityMap, worldState, scenario])
 
-  const categories = useMemo(() => {
-    if (!state) return []
-    return entity.categories.map((cat) => ({
-      ...cat,
-      currentValue: state.categoryValues[cat.id],
-    }))
-  }, [entity, state])
-
   return (
     <div className="location-view">
       <h2>{entity.name}</h2>
       <p className="description">{entity.description}</p>
 
       {/* Clickable state badges */}
-      {categories.length > 0 && (
+      {state && entity.categories.length > 0 && (
         <div className="state-section">
           <h3>状態</h3>
-          <div className="state-badges">
-            {categories.map((cat) => {
-              const val = cat.currentValue
-              return cat.options.map((opt) => {
-                const active = Array.isArray(val) ? val.includes(opt) : val === opt
-                return (
-                  <span
-                    key={`${cat.id}-${opt}`}
-                    className="state-badge clickable"
-                    style={{
-                      cursor: 'pointer',
-                      borderColor: active ? 'var(--accent)' : 'var(--border)',
-                      opacity: active ? 1 : 0.35,
-                    }}
-                    onClick={() => onSetCategory(entity.id, cat.id, opt)}
-                    title={`${cat.name}: ${opt}`}
-                  >
-                    <span className="cat-name">{cat.name}:</span>
-                    <span className={active ? 'cat-value' : 'cat-name'}>{opt}</span>
-                  </span>
-                )
-              })
-            })}
-          </div>
+          <StateBadges
+            categories={entity.categories}
+            categoryValues={state.categoryValues}
+            entityId={entity.id}
+            onSetCategory={onSetCategory}
+          />
         </div>
       )}
 
@@ -117,33 +92,13 @@ export function LocationView({ entity, scenario, worldState, onAction, onNavigat
                   </div>
                   {/* Clickable child state badges */}
                   {childState && child.categories.length > 0 && (
-                    <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-                      {child.categories.map((cat) =>
-                        cat.options.map((opt) => {
-                          const v = childState.categoryValues[cat.id]
-                          const active = Array.isArray(v) ? v.includes(opt) : v === opt
-                          return (
-                            <span
-                              key={`${cat.id}-${opt}`}
-                              className="state-badge clickable"
-                              style={{
-                                fontSize: 11, padding: '1px 6px',
-                                cursor: 'pointer',
-                                borderColor: active ? 'var(--accent)' : 'var(--border)',
-                                opacity: active ? 1 : 0.3,
-                              }}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                onSetCategory(child.id, cat.id, opt)
-                              }}
-                              title={`${cat.name}: ${opt}`}
-                            >
-                              <span className={active ? 'cat-value' : 'cat-name'} style={{ fontSize: 10 }}>{opt}</span>
-                            </span>
-                          )
-                        }),
-                      )}
-                    </div>
+                    <StateBadges
+                      categories={child.categories}
+                      categoryValues={childState.categoryValues}
+                      entityId={child.id}
+                      onSetCategory={onSetCategory}
+                      compact
+                    />
                   )}
                 </div>
               )

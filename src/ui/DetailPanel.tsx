@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { Entity, WorldState, Scenario, ConditionClause } from '../core/types'
 import { getPendingTriggers } from '../core/engine'
+import { StateBadges } from './StateBadges'
 
 interface Props {
   entity: Entity
@@ -65,35 +66,19 @@ export function DetailPanel({ entity, scenario, worldState, onSetCategory }: Pro
       {entity.categories.length > 0 && state && (
         <div className="detail-section">
           <h4>カテゴリ（クリックで変更）</h4>
-          {entity.categories.map((cat) => {
-            const val = state.categoryValues[cat.id]
-            return (
-              <div key={cat.id} style={{ marginBottom: 6 }}>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>
-                  {cat.name} ({cat.exclusive ? '排他' : '非排他'})
-                </div>
-                <div className="state-badges">
-                  {cat.options.map((opt) => {
-                    const active = Array.isArray(val) ? val.includes(opt) : val === opt
-                    return (
-                      <span
-                        key={opt}
-                        className="state-badge clickable"
-                        style={{
-                          borderColor: active ? 'var(--accent)' : 'var(--border)',
-                          opacity: active ? 1 : 0.5,
-                          cursor: 'pointer',
-                        }}
-                        onClick={() => onSetCategory(entity.id, cat.id, opt)}
-                      >
-                        <span className={active ? 'cat-value' : 'cat-name'}>{opt}</span>
-                      </span>
-                    )
-                  })}
-                </div>
+          {entity.categories.map((cat) => (
+            <div key={cat.id} style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>
+                {cat.name} ({cat.exclusive ? '排他' : '非排他'})
               </div>
-            )
-          })}
+              <StateBadges
+                categories={[cat]}
+                categoryValues={state.categoryValues}
+                entityId={entity.id}
+                onSetCategory={onSetCategory}
+              />
+            </div>
+          ))}
         </div>
       )}
 
