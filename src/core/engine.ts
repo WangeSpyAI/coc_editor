@@ -210,6 +210,11 @@ export function applyEffect(
         }
         break
       }
+      default: {
+        // exhaustiveness check: コンパイルエラーで未処理のEffect typeを検出
+        const _exhaustive: never = effect
+        throw new Error(`Unknown effect type: ${(_exhaustive as Effect).type}`)
+      }
     }
   }
 

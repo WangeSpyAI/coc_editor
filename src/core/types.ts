@@ -63,7 +63,7 @@ export interface TriggerCondition {
 
 // ===== 効果 =====
 
-export type EffectType = 'setCategory' | 'removeCategory' | 'move'
+// EffectType は Effect['type'] から自動導出（手動の列挙は不整合の元）
 
 export interface SetCategoryEffect {
   type: 'setCategory'
@@ -88,6 +88,7 @@ export interface MoveEffect {
 }
 
 export type Effect = SetCategoryEffect | RemoveCategoryEffect | MoveEffect
+export type EffectType = Effect['type']
 
 // ===== アクション =====
 
