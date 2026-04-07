@@ -112,35 +112,48 @@ export function useScenario() {
     update({ ...sessionRef.current, worldState: result.worldState, lastResult: result })
   }, [update, cloneWorld])
 
-  /** KP直接操作: カテゴリ値を変更して stabilize */
+  /** KP直接操作: カテゴリ値を変更して stabilize（applyEffect経由） */
   const setCategoryValue = useCallback((entityId: string, categoryId: string, value: string) => {
     if (!sessionRef.current) return
     const { scenario } = sessionRef.current
     const cloned = cloneWorld()
-    const es = cloned.entityStates[entityId]
-    if (!es) return
 
     const entity = scenario.entities.find((e) => e.id === entityId)
     const cat = entity?.categories.find((c) => c.id === categoryId)
-    if (!cat) return
+    if (!entity || !cat) return
 
-    if (cat.exclusive) {
-      if (es.categoryValues[categoryId] === value) return
-      es.categoryValues[categoryId] = value
-    } else {
-      const arr = Array.isArray(es.categoryValues[categoryId]) ? es.categoryValues[categoryId] as string[] : []
+    const states = cloned.entityStates
+    const childrenMap = buildChildrenMap(states)
+
+    // Non-exclusive toggle-off: use removeCategory effect
+    if (!cat.exclusive) {
+      const arr = Array.isArray(states[entityId]?.categoryValues[categoryId])
+        ? states[entityId].categoryValues[categoryId] as string[]
+        : []
       if (arr.includes(value)) {
-        es.categoryValues[categoryId] = arr.filter((v) => v !== value)
-      } else {
-        es.categoryValues[categoryId] = [...arr, value]
+        applyEffect(
+          { type: 'removeCategory', target: { type: 'named', entityId }, categoryId, value },
+          entityId, states, scenario.entities, childrenMap,
+        )
+        cloned.log.push({
+          timestamp: cloned.step, type: 'system', sourceEntityId: entityId,
+          description: `${entity.name}: ${cat.name} − ${value}`,
+        })
+        const result = stabilize(cloned, scenario)
+        update({ ...sessionRef.current, worldState: result.worldState, lastResult: result })
+        return
       }
     }
 
+    // setCategory effect (exclusive: replace, non-exclusive: add)
+    applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId }, categoryId, value },
+      entityId, states, scenario.entities, childrenMap,
+    )
+
     cloned.log.push({
-      timestamp: cloned.step,
-      type: 'system',
-      sourceEntityId: entityId,
-      description: `${entity?.name}: ${cat.name} → ${value}`,
+      timestamp: cloned.step, type: 'system', sourceEntityId: entityId,
+      description: `${entity.name}: ${cat.name} → ${value}`,
     })
 
     const result = stabilize(cloned, scenario)
