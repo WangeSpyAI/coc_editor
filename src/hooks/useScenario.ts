@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
-import type { Scenario, WorldState, Entity, Action, Effect } from '../core/types'
+import type { Scenario, WorldState, Entity, Action, Effect, Trigger, Category } from '../core/types'
 import {
   initializeWorldState,
   stabilize,
@@ -26,7 +26,6 @@ function loadSession(): ScenarioSession | null {
     const json = localStorage.getItem(STORAGE_KEY)
     if (!json) return null
     const data = JSON.parse(json)
-    // Restore Set from array
     data.worldState.firedTriggerIds = new Set(data.worldState.firedTriggerIds)
     return data as ScenarioSession
   } catch {
@@ -47,6 +46,11 @@ function saveSession(session: ScenarioSession) {
   } catch { /* storage full */ }
 }
 
+let idCounter = Date.now()
+function genId(prefix: string): string {
+  return `${prefix}-${(idCounter++).toString(36)}`
+}
+
 export function useScenario() {
   const [session, setSession] = useState<ScenarioSession | null>(loadSession)
   const sessionRef = useRef(session)
@@ -57,6 +61,16 @@ export function useScenario() {
     setSession(next)
     saveSession(next)
   }, [])
+
+  // Clone worldState for mutation
+  const cloneWorld = useCallback((): WorldState => {
+    const ws = sessionRef.current!.worldState
+    const cloned = structuredClone(ws) as WorldState
+    cloned.firedTriggerIds = new Set(ws.firedTriggerIds)
+    return cloned
+  }, [])
+
+  // === Session lifecycle ===
 
   const loadScenario = useCallback((scenario: Scenario) => {
     const worldState = initializeWorldState(scenario)
@@ -74,43 +88,12 @@ export function useScenario() {
     update({ ...sessionRef.current, selectedEntityId: id })
   }, [update])
 
-  const doAction = useCallback((actionId: string, actorId?: string) => {
-    if (!sessionRef.current) return
-    const { worldState, scenario } = sessionRef.current
-    // Deep clone worldState for immutability
-    const cloned = structuredClone(worldState) as WorldState
-    cloned.firedTriggerIds = new Set(worldState.firedTriggerIds)
-    const result = fireAction(actionId, cloned, scenario, actorId)
-    update({
-      ...sessionRef.current,
-      worldState: result.worldState,
-      lastResult: result,
-    })
-  }, [update])
-
-  const updateScenario = useCallback((scenario: Scenario) => {
-    if (!sessionRef.current) return
-    // Re-initialize world state when scenario changes
-    const worldState = initializeWorldState(scenario)
-    const result = stabilize(worldState, scenario)
-    update({
-      ...sessionRef.current,
-      scenario,
-      worldState: result.worldState,
-      lastResult: result,
-    })
-  }, [update])
-
   const resetWorld = useCallback(() => {
     if (!sessionRef.current) return
     const { scenario } = sessionRef.current
     const worldState = initializeWorldState(scenario)
     const result = stabilize(worldState, scenario)
-    update({
-      ...sessionRef.current,
-      worldState: result.worldState,
-      lastResult: result,
-    })
+    update({ ...sessionRef.current, worldState: result.worldState, lastResult: result })
   }, [update])
 
   const clearSession = useCallback(() => {
@@ -119,7 +102,166 @@ export function useScenario() {
     sessionRef.current = null
   }, [])
 
-  // Derived helpers
+  // === Action execution ===
+
+  const doAction = useCallback((actionId: string, actorId?: string) => {
+    if (!sessionRef.current) return
+    const { scenario } = sessionRef.current
+    const cloned = cloneWorld()
+    const result = fireAction(actionId, cloned, scenario, actorId)
+    update({ ...sessionRef.current, worldState: result.worldState, lastResult: result })
+  }, [update, cloneWorld])
+
+  // === Live scenario editing (リアルタイム執筆) ===
+  //
+  // These mutate the scenario AND patch the current world state.
+  // The session is NOT reset — ongoing state is preserved.
+
+  /** Add a new entity to the scenario + world state */
+  const addEntity = useCallback((entity: Omit<Entity, 'id'> & { id?: string }): string => {
+    if (!sessionRef.current) return ''
+    const { scenario } = sessionRef.current
+    const id = entity.id ?? genId('entity')
+    const newEntity: Entity = { ...entity, id } as Entity
+
+    // Patch scenario
+    const newScenario: Scenario = {
+      ...scenario,
+      entities: [...scenario.entities, newEntity],
+    }
+
+    // Patch world state (add EntityState without resetting)
+    const cloned = cloneWorld()
+    const categoryValues: Record<string, string | string[]> = {}
+    for (const cat of newEntity.categories) {
+      categoryValues[cat.id] = cat.exclusive ? (cat.options[0] ?? '') : []
+    }
+    cloned.entityStates[id] = {
+      entityId: id,
+      parentId: newEntity.parentId,
+      categoryValues,
+    }
+
+    // Stabilize with new scenario
+    const result = stabilize(cloned, newScenario)
+    update({ ...sessionRef.current, scenario: newScenario, worldState: result.worldState, lastResult: result })
+    return id
+  }, [update, cloneWorld])
+
+  /** Add a new action to an existing entity */
+  const addAction = useCallback((entityId: string, action: Omit<Action, 'id' | 'entityId'> & { id?: string }): string => {
+    if (!sessionRef.current) return ''
+    const { scenario } = sessionRef.current
+    const id = action.id ?? genId('action')
+    const newAction: Action = { ...action, id, entityId } as Action
+
+    const newScenario: Scenario = {
+      ...scenario,
+      entities: scenario.entities.map((e) =>
+        e.id === entityId ? { ...e, actions: [...e.actions, newAction] } : e,
+      ),
+    }
+
+    // Actions don't change world state, just scenario
+    update({ ...sessionRef.current, scenario: newScenario })
+    return id
+  }, [update])
+
+  /** Add a new trigger to an existing entity, then stabilize */
+  const addTrigger = useCallback((entityId: string, trigger: Omit<Trigger, 'id' | 'entityId'> & { id?: string }): string => {
+    if (!sessionRef.current) return ''
+    const { scenario } = sessionRef.current
+    const id = trigger.id ?? genId('trigger')
+    const newTrigger: Trigger = { ...trigger, id, entityId } as Trigger
+
+    const newScenario: Scenario = {
+      ...scenario,
+      entities: scenario.entities.map((e) =>
+        e.id === entityId ? { ...e, triggers: [...e.triggers, newTrigger] } : e,
+      ),
+    }
+
+    // New trigger might fire immediately → stabilize
+    const cloned = cloneWorld()
+    const result = stabilize(cloned, newScenario)
+    update({ ...sessionRef.current, scenario: newScenario, worldState: result.worldState, lastResult: result })
+    return id
+  }, [update, cloneWorld])
+
+  /** Add a new option to an existing category */
+  const addCategoryOption = useCallback((entityId: string, categoryId: string, option: string) => {
+    if (!sessionRef.current) return
+    const { scenario } = sessionRef.current
+
+    const newScenario: Scenario = {
+      ...scenario,
+      entities: scenario.entities.map((e) =>
+        e.id === entityId
+          ? {
+              ...e,
+              categories: e.categories.map((c) =>
+                c.id === categoryId
+                  ? { ...c, options: c.options.includes(option) ? c.options : [...c.options, option] }
+                  : c,
+              ),
+            }
+          : e,
+      ),
+    }
+
+    update({ ...sessionRef.current, scenario: newScenario })
+  }, [update])
+
+  /** Add a new category to an entity */
+  const addCategory = useCallback((entityId: string, category: Omit<Category, 'id'> & { id?: string }): string => {
+    if (!sessionRef.current) return ''
+    const { scenario } = sessionRef.current
+    const id = category.id ?? genId('cat')
+    const newCat: Category = { ...category, id } as Category
+
+    const newScenario: Scenario = {
+      ...scenario,
+      entities: scenario.entities.map((e) =>
+        e.id === entityId ? { ...e, categories: [...e.categories, newCat] } : e,
+      ),
+    }
+
+    // Patch world state to include new category's default value
+    const cloned = cloneWorld()
+    const es = cloned.entityStates[entityId]
+    if (es) {
+      es.categoryValues[id] = newCat.exclusive ? (newCat.options[0] ?? '') : []
+    }
+
+    update({ ...sessionRef.current, scenario: newScenario, worldState: cloned })
+    return id
+  }, [update, cloneWorld])
+
+  /** Execute ad-hoc effects (direct state manipulation) + stabilize */
+  const applyAdHoc = useCallback((effects: Effect[], description: string) => {
+    if (!sessionRef.current) return
+    const { scenario } = sessionRef.current
+    const cloned = cloneWorld()
+    const states = cloned.entityStates
+    const childrenMap = buildChildrenMap(states)
+
+    for (const effect of effects) {
+      applyEffect(effect, '__adhoc__', states, scenario.entities, childrenMap)
+    }
+
+    cloned.log.push({
+      timestamp: cloned.step,
+      type: 'action',
+      sourceEntityId: '__adhoc__',
+      description,
+    })
+
+    const result = stabilize(cloned, scenario)
+    update({ ...sessionRef.current, worldState: result.worldState, lastResult: result })
+  }, [update, cloneWorld])
+
+  // === Derived helpers ===
+
   const getEntityChildren = useCallback((entityId: string): Entity[] => {
     if (!sessionRef.current) return []
     const { scenario, worldState } = sessionRef.current
@@ -152,34 +294,6 @@ export function useScenario() {
     return result
   }, [])
 
-  const applyAdHoc = useCallback((effects: Effect[], description: string) => {
-    if (!sessionRef.current) return
-    const { worldState, scenario } = sessionRef.current
-    const cloned = structuredClone(worldState) as WorldState
-    cloned.firedTriggerIds = new Set(worldState.firedTriggerIds)
-    const states = cloned.entityStates
-    const childrenMap = buildChildrenMap(states)
-
-    for (const effect of effects) {
-      // Ad-hoc effects use '__adhoc__' as selfId since they have no owning entity
-      applyEffect(effect, '__adhoc__', states, scenario.entities, childrenMap)
-    }
-
-    cloned.log.push({
-      timestamp: cloned.step,
-      type: 'action',
-      sourceEntityId: '__adhoc__',
-      description,
-    })
-
-    const result = stabilize(cloned, scenario)
-    update({
-      ...sessionRef.current,
-      worldState: result.worldState,
-      lastResult: result,
-    })
-  }, [update])
-
   const getPending = useCallback(() => {
     if (!sessionRef.current) return []
     return getPendingTriggers(sessionRef.current.worldState, sessionRef.current.scenario)
@@ -190,10 +304,16 @@ export function useScenario() {
     loadScenario,
     selectEntity,
     doAction,
-    updateScenario,
     resetWorld,
     clearSession,
+    // Live editing
+    addEntity,
+    addAction,
+    addTrigger,
+    addCategory,
+    addCategoryOption,
     applyAdHoc,
+    // Derived
     getEntityChildren,
     getEntityActions,
     getDescendantActions,

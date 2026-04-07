@@ -5,7 +5,7 @@ import { EntityTree } from './EntityTree'
 import { LocationView } from './LocationView'
 import { DetailPanel } from './DetailPanel'
 import { DependencyGraph } from './DependencyGraph'
-import { AdHocAction } from './AdHocAction'
+import { LiveEditor } from './LiveEditor'
 import { sampleScenario } from '../core/sampleScenario'
 import type { Entity } from '../core/types'
 
@@ -19,6 +19,9 @@ export function App() {
     selectEntity,
     doAction,
     applyAdHoc,
+    addEntity,
+    addAction,
+    addTrigger,
     resetWorld,
     clearSession,
     getPending,
@@ -82,7 +85,6 @@ export function App() {
         <h1>Scenario Editor</h1>
         <span className="scenario-title">{scenario.title}</span>
 
-        {/* View tabs */}
         <div className="view-tabs">
           <button
             className={`view-tab${mainView === 'location' ? ' active' : ''}`}
@@ -158,9 +160,13 @@ export function App() {
               onAction={handleAction}
               onNavigate={handleNavigate}
             />
-            <AdHocAction
+            <LiveEditor
               scenario={scenario}
-              onApply={applyAdHoc}
+              selectedEntityId={session.selectedEntityId}
+              onAddEntity={addEntity}
+              onAddAction={addAction}
+              onAddTrigger={addTrigger}
+              onApplyEffect={applyAdHoc}
             />
           </>
         ) : (
