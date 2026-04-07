@@ -15,6 +15,8 @@ type MobileTab = 'tree' | 'main' | 'detail'
 export function App() {
   const {
     session,
+    canUndo,
+    undo,
     loadScenario,
     selectEntity,
     doAction,
@@ -107,6 +109,7 @@ export function App() {
           </span>
         )}
         <div className="header-actions">
+          <button className="btn btn-sm" onClick={undo} disabled={!canUndo}>元に戻す</button>
           <button className="btn btn-sm" onClick={resetWorld}>リセット</button>
           <button className="btn btn-sm btn-danger" onClick={clearSession}>閉じる</button>
         </div>

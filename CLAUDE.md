@@ -49,17 +49,28 @@ React + TypeScript. Components access engine through `useScenario` hook.
 以下は「なんとなくのガイドライン」ではなく、コードの構造的安全性を保証する不変条件。
 違反するとバグが入る。例外なし。
 
-### 1. 状態変更は2つのパスしか存在しない
+### 1. 状態更新プリミティブは3つだけ
 
 ```
-mutateAndStabilize(api => { ... })  — WorldState を変更（stabilize保証）
-mutateScenario(scenario => { ... }) — Scenario だけ変更（stabilize不要）
+commitMutation(next)    — 状態/スキーマ変更。undo自動push。
+lifecycleReset(next)    — セッション開始/終了。undoスタッククリア。
+(selectEntity内で直書き) — UI選択のみ。undoなし。
 ```
 
-**第3の方法は存在しない。**
+`update()` や `pushUndo()` のような汎用関数は存在しない。
+`commitMutation` を呼べばundoは自動。忘れようがない。
+`lifecycleReset` を呼べばundoはリセット。中途半端な履歴が残らない。
 
-`mutateAndStabilize` のコールバックは `MutationAPI` を受け取る。
-生の `WorldState` にはアクセスできない。許可された操作だけが存在する:
+**全公開関数はこの3つのどれかを経由する:**
+
+| プリミティブ | 使用関数 |
+|---|---|
+| `commitMutation` | `mutateAndStabilize`, `mutateScenario`, `resetWorld` |
+| `lifecycleReset` | `loadScenario`, `clearSession` |
+| 直書き | `selectEntity`, `undo` |
+
+`mutateAndStabilize` / `mutateScenario` は `commitMutation` を内部で呼ぶ。
+コールバックは `MutationAPI` を受け取る。生の `WorldState` には触れない:
 
 ```typescript
 interface MutationAPI {
@@ -72,7 +83,7 @@ interface MutationAPI {
 ```
 
 **なぜ**: `entityStates[x].categoryValues[y] = z` と書く道がそもそもない。
-stabilize 忘れも不可能。「気をつける」「覚えておく」に依存しない。
+stabilize 忘れも不可能。undo忘れも不可能。「気をつける」に依存しない。
 
 ### 2. UI層は ReadonlyWorldState しか見えない
 

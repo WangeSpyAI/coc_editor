@@ -395,6 +395,15 @@ body {
   background: var(--bg-hover);
 }
 
+.btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.btn:disabled:hover {
+  background: var(--bg-card);
+}
+
 .btn-primary {
   border-color: var(--accent);
   color: var(--accent);

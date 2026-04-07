@@ -11,6 +11,7 @@ import {
 } from '../core/engine'
 
 const STORAGE_KEY = 'scenario_editor_data'
+const MAX_UNDO_HISTORY = 50
 
 /**
  * 外部公開用セッション型。
@@ -79,11 +80,10 @@ export function useScenario() {
   const sessionRef = useRef(session)
   sessionRef.current = session
 
-  const update = useCallback((next: ScenarioSession) => {
-    sessionRef.current = next
-    setSession(next)
-    saveSession(next)
-  }, [])
+  // Undo 履歴: mutateAndStabilize が自動的にスナップショットを積む。
+  // 個別関数が「履歴に入れ忘れる」ことが構造的にない。
+  const undoStackRef = useRef<ScenarioSession[]>([])
+  const [canUndo, setCanUndo] = useState(false)
 
   // Clone worldState for mutation (Set復元込み)
   const cloneWorld = useCallback((): WorldState => {
@@ -94,17 +94,44 @@ export function useScenario() {
   }, [])
 
   // ====================================================================
-  // 全操作はこの2つのヘルパーのどちらかを経由する。
-  // update() と cloneWorld() は直接呼ばない（lifecycle関数を除く）。
+  // 状態更新プリミティブは3つだけ。それぞれundoの意味が異なる。
   //
-  //   mutateAndStabilize — WorldState を変更する操作（stabilize保証）
-  //   mutateScenario     — Scenario だけ変更する操作（stabilize不要）
+  //   commitMutation  — 状態/スキーマ変更。undo自動push。
+  //   lifecycleReset  — セッション開始/終了。undoスタッククリア。
+  //   (selectEntity)  — UI選択のみ。undoなし。直書き。
   //
-  // 第3の方法は存在しない。
-  // コールバックは MutationAPI を受け取る。生の WorldState には触れない。
+  // update() や pushUndo() は存在しない。
+  // commitMutation を呼べばundoは自動。忘れようがない。
+  // lifecycleReset を呼べばundoはリセット。中途半端な履歴が残らない。
   // ====================================================================
 
-  /** WorldState変更パス: clone → MutationAPI構築 → コールバック → stabilize → update */
+  /** 状態変更コミット: undo自動push → 新状態を保存 */
+  const commitMutation = useCallback((next: ScenarioSession) => {
+    if (sessionRef.current) {
+      const stack = undoStackRef.current
+      stack.push(sessionRef.current)
+      if (stack.length > MAX_UNDO_HISTORY) stack.shift()
+      setCanUndo(true)
+    }
+    sessionRef.current = next
+    setSession(next)
+    saveSession(next)
+  }, [])
+
+  /** セッション境界: undoスタッククリア → 新状態を保存（またはnullでクリア） */
+  const lifecycleReset = useCallback((next: ScenarioSession | null) => {
+    undoStackRef.current = []
+    setCanUndo(false)
+    sessionRef.current = next
+    setSession(next)
+    if (next) {
+      saveSession(next)
+    } else {
+      localStorage.removeItem(STORAGE_KEY)
+    }
+  }, [])
+
+  /** WorldState変更パス: clone → MutationAPI → stabilize → commitMutation */
   const mutateAndStabilize = useCallback((
     mutate: (api: MutationAPI) => void,
     scenarioOverride?: Scenario,
@@ -132,54 +159,56 @@ export function useScenario() {
 
     mutate(api)
     const result = stabilize(ws, scenario)
-    update({
+    commitMutation({
       ...sessionRef.current,
       scenario,
       worldState: result.worldState,
       lastResult: result,
     })
-  }, [update, cloneWorld])
+  }, [commitMutation, cloneWorld])
 
-  /** Scenario変更パス: scenario だけ差し替え、WorldState は触らない */
+  /** Scenario変更パス: scenario 差し替え → commitMutation */
   const mutateScenario = useCallback((
     mutate: (scenario: Scenario) => Scenario,
   ) => {
     if (!sessionRef.current) return
     const newScenario = mutate(sessionRef.current.scenario)
-    update({ ...sessionRef.current, scenario: newScenario })
-  }, [update])
+    commitMutation({ ...sessionRef.current, scenario: newScenario })
+  }, [commitMutation])
 
-  // === Session lifecycle ===
+  // === Session lifecycle (undoスタッククリア) ===
 
   const loadScenario = useCallback((scenario: Scenario) => {
     const worldState = initializeWorldState(scenario)
     const result = stabilize(worldState, scenario)
-    update({
+    lifecycleReset({
       scenario,
       worldState: result.worldState,
       selectedEntityId: null,
       lastResult: result,
     })
-  }, [update])
+  }, [lifecycleReset])
 
   const selectEntity = useCallback((id: string | null) => {
     if (!sessionRef.current) return
-    update({ ...sessionRef.current, selectedEntityId: id })
-  }, [update])
+    // UI選択のみ — undo不要、commitMutationも不要
+    const next = { ...sessionRef.current, selectedEntityId: id }
+    sessionRef.current = next
+    setSession(next)
+    saveSession(next)
+  }, [])
 
   const resetWorld = useCallback(() => {
     if (!sessionRef.current) return
     const { scenario } = sessionRef.current
     const worldState = initializeWorldState(scenario)
     const result = stabilize(worldState, scenario)
-    update({ ...sessionRef.current, worldState: result.worldState, lastResult: result })
-  }, [update])
+    commitMutation({ ...sessionRef.current, worldState: result.worldState, lastResult: result })
+  }, [commitMutation])
 
   const clearSession = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY)
-    setSession(null)
-    sessionRef.current = null
-  }, [])
+    lifecycleReset(null)
+  }, [lifecycleReset])
 
   // === Action execution ===
 
@@ -292,6 +321,18 @@ export function useScenario() {
     })
   }, [mutateAndStabilize])
 
+  // === Undo (スタックから復元。commitMutationもlifecycleResetも通さない) ===
+
+  const undo = useCallback(() => {
+    const stack = undoStackRef.current
+    const prev = stack.pop()
+    if (!prev) return
+    setCanUndo(stack.length > 0)
+    sessionRef.current = prev
+    setSession(prev)
+    saveSession(prev)
+  }, [])
+
   // === Derived helpers ===
 
   const getPending = useCallback(() => {
@@ -301,6 +342,8 @@ export function useScenario() {
 
   return {
     session,
+    canUndo,
+    undo,
     loadScenario,
     selectEntity,
     doAction,
