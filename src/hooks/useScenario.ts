@@ -104,11 +104,11 @@ export function useScenario() {
 
   // === Action execution ===
 
-  const doAction = useCallback((actionId: string, actorId?: string) => {
+  const doAction = useCallback((actionId: string, actorId?: string, rollResult?: 'success' | 'failure') => {
     if (!sessionRef.current) return
     const { scenario } = sessionRef.current
     const cloned = cloneWorld()
-    const result = fireAction(actionId, cloned, scenario, actorId)
+    const result = fireAction(actionId, cloned, scenario, actorId, rollResult)
     update({ ...sessionRef.current, worldState: result.worldState, lastResult: result })
   }, [update, cloneWorld])
 

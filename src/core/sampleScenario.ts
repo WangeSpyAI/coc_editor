@@ -110,12 +110,18 @@ export const sampleScenario: Scenario = {
           id: 'break-study-door',
           name: 'ドアを蹴破る',
           entityId: 'study-door',
-          description: '$actorが書斎のドアを蹴破った！大きな音が響いた。',
+          description: '$actorが書斎のドアに体当たりした。',
           isPlayerAction: true,
-          effects: [
-            { type: 'setCategory', target: { type: 'self' }, categoryId: 'study-door-state', value: '破壊' },
-            { type: 'setCategory', target: { type: 'named', entityId: 'yamada' }, categoryId: 'yamada-attitude', value: '警戒' },
-          ],
+          rollRequirement: {
+            skill: 'STR',
+            opposed: true,
+            successEffects: [
+              { type: 'setCategory', target: { type: 'self' }, categoryId: 'study-door-state', value: '破壊' },
+              { type: 'setCategory', target: { type: 'named', entityId: 'yamada' }, categoryId: 'yamada-attitude', value: '警戒' },
+            ],
+            failureEffects: [],
+          },
+          effects: [],
         },
       ],
       triggers: [],

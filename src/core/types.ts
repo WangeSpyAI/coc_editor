@@ -105,10 +105,12 @@ export interface Action {
 }
 
 export interface RollRequirement {
-  skill: string // 技能名
-  difficulty?: number // 目標値（省略時はキャラシートから）
+  skill: string // 技能名（STR, DEX, 目星, 鍵開け 等）
+  difficulty?: number // 目標値（省略時はKPが判断）
+  opposed?: boolean // true なら対抗ロール（STR対抗等）
   successEffects?: Effect[] // 成功時の追加効果
   failureEffects?: Effect[] // 失敗時の追加効果
+  // エンジンはダイスを振らない。KPが成功/失敗を入力する。
 }
 
 // ===== トリガー =====

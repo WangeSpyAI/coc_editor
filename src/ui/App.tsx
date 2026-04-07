@@ -48,8 +48,8 @@ export function App() {
     [session, getPending],
   )
 
-  const handleAction = useCallback((actionId: string) => {
-    doAction(actionId, 'PC')
+  const handleAction = useCallback((actionId: string, rollResult?: 'success' | 'failure') => {
+    doAction(actionId, 'PC', rollResult)
   }, [doAction])
 
   const handleNavigate = useCallback((entityId: string) => {

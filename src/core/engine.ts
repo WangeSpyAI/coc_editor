@@ -318,12 +318,20 @@ export function getAvailableActions(
   })
 }
 
-/** アクションを発火し、stabilize する */
+/**
+ * アクションを発火し、stabilize する。
+ *
+ * rollResult:
+ *   - undefined: ロール不要（rollRequirementなし）またはロールなしで実行
+ *   - 'success': ロール成功 → effects + successEffects
+ *   - 'failure': ロール失敗 → failureEffects のみ
+ */
 export function fireAction(
   actionId: string,
   worldState: WorldState,
   scenario: Scenario,
   actorId?: string,
+  rollResult?: 'success' | 'failure',
 ): StabilizeResult {
   // アクションを探す
   let action: Action | undefined
@@ -344,20 +352,42 @@ export function fireAction(
   const states = worldState.entityStates
   const childrenMap = buildChildrenMap(states)
 
-  // 効果適用
-  for (const effect of action.effects) {
-    applyEffect(effect, ownerEntity.id, states, scenario.entities, childrenMap)
+  // ロール判定の結果に基づいて適用する効果を決定
+  const hasRoll = action.rollRequirement != null
+  const effectiveRollResult = hasRoll ? (rollResult ?? 'success') : undefined
+
+  if (effectiveRollResult === 'failure') {
+    // 失敗: failureEffects のみ
+    const failEffects = action.rollRequirement?.failureEffects ?? []
+    for (const effect of failEffects) {
+      applyEffect(effect, ownerEntity.id, states, scenario.entities, childrenMap)
+    }
+  } else {
+    // 成功 or ロールなし: 基本effects適用
+    for (const effect of action.effects) {
+      applyEffect(effect, ownerEntity.id, states, scenario.entities, childrenMap)
+    }
+    // 成功時追加効果
+    if (effectiveRollResult === 'success') {
+      const successEffects = action.rollRequirement?.successEffects ?? []
+      for (const effect of successEffects) {
+        applyEffect(effect, ownerEntity.id, states, scenario.entities, childrenMap)
+      }
+    }
   }
 
   // ログ
   const desc = actorId
     ? action.description.replace(/\$actor/g, actorId)
     : action.description
+  const rollSuffix = effectiveRollResult
+    ? effectiveRollResult === 'success' ? '（成功）' : '（失敗）'
+    : ''
   worldState.log.push({
     timestamp: worldState.step,
     type: 'action',
     sourceEntityId: ownerEntity.id,
-    description: desc,
+    description: desc + rollSuffix,
     actorId,
   })
 

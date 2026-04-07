@@ -6,7 +6,7 @@ interface Props {
   entity: Entity
   scenario: Scenario
   worldState: WorldState
-  onAction: (actionId: string) => void
+  onAction: (actionId: string, rollResult?: 'success' | 'failure') => void
   onNavigate: (entityId: string) => void
   onSetCategory: (entityId: string, categoryId: string, value: string) => void
 }
@@ -159,19 +159,43 @@ export function LocationView({ entity, scenario, worldState, onAction, onNavigat
             <h3>アクション</h3>
           </div>
           <div className="action-list">
-            {descendantActions.map(({ entity: ownerEntity, action }) => (
-              <div key={action.id} className="action-card">
-                <div className="action-info">
-                  <div className="action-name">{action.name}</div>
-                  {ownerEntity.id !== entity.id && (
-                    <div className="action-owner">{ownerEntity.name}</div>
-                  )}
+            {descendantActions.map(({ entity: ownerEntity, action }) => {
+              const roll = action.rollRequirement
+              return (
+                <div key={action.id} className="action-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div className="action-info">
+                      <div className="action-name">
+                        {action.name}
+                        {roll && (
+                          <span style={{ fontSize: 11, color: 'var(--warning)', marginLeft: 6 }}>
+                            [{roll.skill}{roll.difficulty ? ` ${roll.difficulty}` : ''}{roll.opposed ? ' 対抗' : ''}]
+                          </span>
+                        )}
+                      </div>
+                      {ownerEntity.id !== entity.id && (
+                        <div className="action-owner">{ownerEntity.name}</div>
+                      )}
+                    </div>
+                    {!roll ? (
+                      <button className="action-btn" onClick={() => onAction(action.id)}>
+                        実行
+                      </button>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button className="action-btn" onClick={() => onAction(action.id, 'success')}>
+                          成功
+                        </button>
+                        <button className="action-btn" style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
+                          onClick={() => onAction(action.id, 'failure')}>
+                          失敗
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <button className="action-btn" onClick={() => onAction(action.id)}>
-                  実行
-                </button>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}
