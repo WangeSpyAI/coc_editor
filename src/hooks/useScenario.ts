@@ -260,7 +260,7 @@ export function useScenario() {
     update({ ...sessionRef.current, scenario: newScenario })
   }, [update])
 
-  /** Add a new category to an entity */
+  /** Add a new category to an entity (schema change + world state init + stabilize) */
   const addCategory = useCallback((entityId: string, category: Omit<Category, 'id'> & { id?: string }): string => {
     if (!sessionRef.current) return ''
     const { scenario } = sessionRef.current
@@ -274,14 +274,16 @@ export function useScenario() {
       ),
     }
 
-    // Patch world state to include new category's default value
+    // Initialize new category's default value (same pattern as initializeWorldState)
     const cloned = cloneWorld()
     const es = cloned.entityStates[entityId]
-    if (es) {
+    if (es && !(id in es.categoryValues)) {
       es.categoryValues[id] = newCat.exclusive ? (newCat.options[0] ?? '') : []
     }
 
-    update({ ...sessionRef.current, scenario: newScenario, worldState: cloned })
+    // Stabilize — new category value may trigger existing triggers
+    const result = stabilize(cloned, newScenario)
+    update({ ...sessionRef.current, scenario: newScenario, worldState: result.worldState, lastResult: result })
     return id
   }, [update, cloneWorld])
 

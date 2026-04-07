@@ -63,7 +63,7 @@ export interface TriggerCondition {
 
 // ===== 効果 =====
 
-export type EffectType = 'setCategory' | 'move' | 'addLabel' | 'removeLabel'
+export type EffectType = 'setCategory' | 'removeCategory' | 'move'
 
 export interface SetCategoryEffect {
   type: 'setCategory'
