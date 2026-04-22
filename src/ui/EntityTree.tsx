@@ -7,10 +7,13 @@ interface Props {
   worldState: ReadonlyWorldState
   selectedId: string | null
   onSelect: (id: string) => void
+  onAddEntity: (entity: Omit<Entity, 'id'>) => string
 }
 
-export function EntityTree({ scenario, worldState, selectedId, onSelect }: Props) {
+export function EntityTree({ scenario, worldState, selectedId, onSelect, onAddEntity }: Props) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [adding, setAdding] = useState(false)
+  const [newName, setNewName] = useState('')
 
   const childrenMap = useMemo(
     () => buildChildrenMap(worldState.entityStates),
@@ -79,9 +82,48 @@ export function EntityTree({ scenario, worldState, selectedId, onSelect }: Props
     )
   }
 
+  const handleAddEntity = () => {
+    if (!newName.trim()) return
+    const id = onAddEntity({
+      name: newName.trim(),
+      parentId: null,
+      description: '',
+      labels: [],
+      connections: [],
+      categories: [],
+      actions: [],
+      triggers: [],
+    })
+    setNewName('')
+    setAdding(false)
+    onSelect(id)
+  }
+
   return (
     <div className="entity-tree">
       {rootIds.map((id) => renderNode(id, 0))}
+      {adding ? (
+        <div style={{ padding: '4px 8px' }}>
+          <input
+            autoFocus
+            placeholder="エンティティ名"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleAddEntity(); if (e.key === 'Escape') setAdding(false) }}
+            onBlur={() => { if (!newName.trim()) setAdding(false) }}
+            style={{
+              width: '100%', background: 'var(--bg-card)', border: '1px solid var(--accent)',
+              borderRadius: 'var(--radius)', padding: '4px 8px', fontSize: 12, color: 'var(--text)',
+            }}
+          />
+        </div>
+      ) : (
+        <div style={{ padding: '8px 12px' }}>
+          <button className="btn btn-sm btn-primary" onClick={() => setAdding(true)} style={{ width: '100%' }}>
+            + エンティティ追加
+          </button>
+        </div>
+      )}
     </div>
   )
 }

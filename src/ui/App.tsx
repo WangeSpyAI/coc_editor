@@ -221,6 +221,7 @@ export function App() {
           worldState={worldState}
           selectedId={selectedEntityId}
           onSelect={handleMobileSelect}
+          onAddEntity={addEntity}
         />
       </div>
 
