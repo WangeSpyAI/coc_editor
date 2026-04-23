@@ -34,7 +34,7 @@ body {
 /* ===== Layout ===== */
 .app-layout {
   display: grid;
-  grid-template-columns: 260px 1fr 320px;
+  grid-template-columns: 260px 1fr;
   grid-template-rows: 48px 1fr;
   height: 100vh;
   gap: 1px;
@@ -138,7 +138,71 @@ body {
 .layout-main {
   background: var(--bg);
   overflow-y: auto;
-  padding: 16px;
+  padding: 24px 32px;
+  max-width: 800px;
+}
+
+/* ===== Entity Panel ===== */
+.entity-panel-name {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.entity-panel-desc {
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.entity-section {
+  margin-bottom: 16px;
+}
+
+.entity-section h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.category-block {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.category-name {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.category-options-display {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  cursor: pointer;
+}
+
+.add-category-form {
+  margin-top: 4px;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+}
+
+.trigger-card {
+  padding: 6px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 4px;
 }
 
 .location-view h2 {
@@ -294,34 +358,6 @@ body {
   color: var(--bg);
 }
 
-.layout-detail {
-  background: var(--bg-surface);
-  overflow-y: auto;
-  padding: 16px;
-}
-
-.detail-content h2 {
-  font-size: 16px;
-  margin-bottom: 4px;
-}
-
-.detail-content .description {
-  color: var(--text-muted);
-  line-height: 1.5;
-  margin-bottom: 12px;
-}
-
-.detail-section {
-  margin-bottom: 12px;
-}
-
-.detail-section h4 {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-dim);
-  margin-bottom: 6px;
-}
 
 /* ===== Log ===== */
 .log-section {
@@ -484,116 +520,17 @@ body {
 }
 
 /* ===== Mobile Layout ===== */
-
-/* Mobile tabs hidden on desktop */
-.mobile-tabs {
-  display: none;
-}
-
 @media (max-width: 768px) {
   .app-layout {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    height: 100dvh; /* dynamic viewport for mobile browsers */
-  }
-
-  .app-header {
-    flex-shrink: 0;
-    padding: 0 8px;
-    gap: 6px;
-    min-height: 44px;
-    flex-wrap: wrap;
-  }
-
-  .app-header h1 {
-    font-size: 13px;
-    white-space: nowrap;
-  }
-
-  .app-header .scenario-title {
-    font-size: 12px;
-  }
-
-  .view-tabs {
-    margin-left: 0;
-  }
-
-  .view-tab {
-    padding: 3px 8px;
-    font-size: 11px;
-  }
-
-  .header-actions {
-    margin-left: auto;
-  }
-
-  /* Tab bar */
-  .mobile-tabs {
-    display: flex;
-    flex-shrink: 0;
-    background: var(--bg-surface);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .mobile-tab {
-    flex: 1;
-    padding: 10px 4px;
-    text-align: center;
-    font-size: 13px;
-    color: var(--text-muted);
-    background: none;
-    border: none;
-    cursor: pointer;
-    border-bottom: 2px solid transparent;
-  }
-
-  .mobile-tab.active {
-    color: var(--accent);
-    border-bottom-color: var(--accent);
-  }
-
-  /* Only the active panel is visible */
-  .layout-sidebar,
-  .layout-main,
-  .layout-detail {
-    display: none;
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-  }
-
-  .layout-sidebar.mobile-visible,
-  .layout-main.mobile-visible,
-  .layout-detail.mobile-visible {
-    display: block;
-  }
-
-  .layout-main {
-    padding: 12px 8px;
-  }
-
-  .children-grid {
     grid-template-columns: 1fr;
   }
 
-  .action-card {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
+  .layout-sidebar {
+    display: none;
   }
 
-  .action-btn {
-    align-self: flex-end;
-  }
-
-  /* Graph SVG scrollable */
-  .graph-view {
-    padding: 8px;
-  }
-
-  .graph-container svg {
-    max-width: 100%;
+  .layout-main {
+    padding: 16px;
   }
 }
 
@@ -678,29 +615,6 @@ body {
   border: 1px solid;
 }
 
-/* ===== View Tabs ===== */
-.view-tabs {
-  display: flex;
-  gap: 2px;
-  margin-left: 16px;
-}
-
-.view-tab {
-  padding: 4px 12px;
-  font-size: 12px;
-  color: var(--text-muted);
-  background: transparent;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: var(--radius) var(--radius) 0 0;
-  cursor: pointer;
-}
-
-.view-tab.active {
-  color: var(--accent);
-  background: var(--bg);
-  border-color: var(--border);
-}
 
 /* ===== Ad-hoc Action ===== */
 .adhoc-section {
