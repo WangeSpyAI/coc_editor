@@ -25,9 +25,19 @@ function authorFacts(session: ScenarioSession): Fact[] {
   return Object.values(session.scenario.facts).filter((fact) => fact.historyPolicy !== 'generated')
 }
 
+function withInvestigatorParty(session: ScenarioSession): ScenarioSession {
+  let next = createPc(session, { id: 'pc-mika', name: '美香' }).session
+  next = createPc(next, { id: 'pc-ren', name: '蓮' }).session
+  return createParty(next, {
+    id: 'party-investigators',
+    name: '探索者たち',
+    memberIds: ['pc-mika', 'pc-ren'],
+  }).session
+}
+
 describe('v6 Phase 4 operation walkthroughs', () => {
   it('skips the request and steals the key by changing only the location slot', () => {
-    const { session } = buildMiniScenario()
+    const session = withInvestigatorParty(buildMiniScenario().session)
     const beforeAuthorFacts = authorFacts(session).map((fact) => [fact.id, session.state.factStates[fact.id]?.isTrue])
 
     const stolen = assignSlot(
@@ -38,7 +48,7 @@ describe('v6 Phase 4 operation walkthroughs', () => {
 
     const key = projectItemRow(stolen.session, 'obj-iron-key')
     expect(key.location?.target).toEqual({ type: 'party', id: 'party-investigators' })
-    expect(key.location?.label).toBe('party-investigators')
+    expect(key.location?.label).toBe('探索者たち')
     expect(stolen.session.state.slotStates['slot-obj-iron-key-location'].currentFactId).toBe(stolen.factId)
     expect(authorFacts(stolen.session).map((fact) => [
       fact.id,
@@ -78,14 +88,7 @@ describe('v6 Phase 4 operation walkthroughs', () => {
   })
 
   it('splits Party knowledge to one PC and promotes it back without duplicating the Fact', () => {
-    let session = buildMiniScenario().session
-    session = createPc(session, { id: 'pc-mika', name: '美香' }).session
-    session = createPc(session, { id: 'pc-ren', name: '蓮' }).session
-    session = createParty(session, {
-      id: 'party-investigators',
-      name: '探索者たち',
-      memberIds: ['pc-mika', 'pc-ren'],
-    }).session
+    let session = withInvestigatorParty(buildMiniScenario().session)
     const knowledge = createFact(session, {
       statement: '探索者は書斎の隠し戸の存在を知った',
       initial: false,
@@ -119,7 +122,9 @@ describe('v6 Phase 4 operation walkthroughs', () => {
   })
 
   it('undoes and redoes a mistaken transaction across Fact, Slot, Event, and Log state', () => {
-    const { session, ids } = buildMiniScenario()
+    const fixture = buildMiniScenario()
+    const session = withInvestigatorParty(fixture.session)
+    const { ids } = fixture
     const before = snapshot(session)
 
     const changed = mutateAndEvaluate(session, '誤って書斎イベントと鍵移動を適用', (api) => {

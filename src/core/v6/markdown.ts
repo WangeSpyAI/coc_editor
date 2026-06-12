@@ -5,6 +5,7 @@ import type {
   ReadonlyDeep,
   ReadonlyScenarioSession,
 } from './types'
+import { disclosureLabel } from './labels'
 import {
   projectRevelation,
   projectScene,
@@ -29,17 +30,24 @@ function keeperQuote(text: string): string {
 }
 
 function itemLabel(row: ItemProjection): string {
-  return `${row.kind === 'item' ? 'Item' : 'Clue'}: ${row.entity.name} | 所在: ${row.location?.label ?? '不明'} | 開示: ${row.disclosure ?? '不明'}`
+  return `${row.kind === 'item' ? 'Item' : 'Clue'}: ${row.entity.name} | 所在: ${row.location?.label ?? '不明'} | 開示: ${disclosureLabel(row.disclosure) ?? '不明'}`
 }
 
 function npcLabel(row: NpcProjection): string {
-  return [
-    `NPC: ${row.npc.name}`,
-    `現在地: ${row.location?.label ?? '不明'}`,
-    `意図: ${row.intent?.label ?? '不明'}`,
-    `恐れ: ${row.fear?.label ?? '不明'}`,
-    `感情: ${row.emotion?.label ?? '不明'}`,
-  ].join(' | ')
+  const fields = [`NPC: ${row.npc.name}`]
+  if (row.location) {
+    fields.push(`現在地: ${row.location.label}`)
+  }
+  if (row.intent) {
+    fields.push(`意図: ${row.intent.label}`)
+  }
+  if (row.fear) {
+    fields.push(`恐れ: ${row.fear.label}`)
+  }
+  if (row.emotion) {
+    fields.push(`感情: ${row.emotion.label}`)
+  }
+  return fields.join(' | ')
 }
 
 function eventLabel(row: SceneEventProjection): string {

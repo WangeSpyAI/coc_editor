@@ -28,6 +28,7 @@ import type {
   SlotValueTarget,
 } from './types'
 import { evaluateConditionLinks, listFireableEvents } from './engine'
+import { disclosureLabel } from './labels'
 
 type ReadonlyView<T> = ReadonlyDeep<T>
 
@@ -246,9 +247,11 @@ function factIsTrue(session: ReadonlyScenarioSession, factId: FactId): boolean {
   return session.state.factStates[factId]?.isTrue ?? session.scenario.facts[factId]?.initial ?? false
 }
 
-function linkedFactIds(session: ReadonlyScenarioSession, id: EntityId): FactId[] {
+function npcKnowledgeFactIds(session: ReadonlyScenarioSession, npcId: NpcId): FactId[] {
   return Object.values(session.scenario.facts)
-    .filter((fact) => fact.links?.some((link) => link.id === id))
+    .filter((fact) => fact.links?.some((link) => (
+      link.type === 'npc' && link.id === npcId && link.relation === 'knowledge'
+    )))
     .map((fact) => fact.id)
 }
 
@@ -355,10 +358,7 @@ export function projectNpcCard(
   if (!npc) {
     throw new Error(`NPC not found: ${npcId}`)
   }
-  const initialKnowledgeFactIds = npc.initialDynamicSlots?.knowledgeFactIds ?? []
-  const linkedKnowledgeFactIds = linkedFactIds(session, npcId)
-    .filter((factId) => !session.scenario.facts[factId]?.slot)
-  const knowledgeFactIds = uniqueIds([...initialKnowledgeFactIds, ...linkedKnowledgeFactIds])
+  const knowledgeFactIds = uniqueIds(npcKnowledgeFactIds(session, npcId))
 
   return {
     npc,
@@ -609,7 +609,7 @@ function currentValueSearchRows(session: ReadonlyScenarioSession): SearchResult[
     rows.push({
       ref: { type: 'item', id: itemId },
       title: row.entity.name,
-      snippet: `${row.entity.name} の所在: ${row.location?.label ?? '不明'}。開示状態: ${row.disclosure ?? '不明'}。`,
+      snippet: `${row.entity.name} の所在: ${row.location?.label ?? '不明'}。開示状態: ${disclosureLabel(row.disclosure) ?? '不明'}。`,
       matchKind: 'current-value',
     })
   }
@@ -618,7 +618,7 @@ function currentValueSearchRows(session: ReadonlyScenarioSession): SearchResult[
     rows.push({
       ref: { type: 'clue', id: clueId },
       title: row.entity.name,
-      snippet: `${row.entity.name} の所在: ${row.location?.label ?? '不明'}。開示状態: ${row.disclosure ?? '不明'}。${row.clueFact?.statement ?? ''}`,
+      snippet: `${row.entity.name} の所在: ${row.location?.label ?? '不明'}。開示状態: ${disclosureLabel(row.disclosure) ?? '不明'}。${row.clueFact?.statement ?? ''}`,
       matchKind: 'current-value',
     })
   }

@@ -26,6 +26,7 @@ import type {
   Item,
   ItemId,
   Npc,
+  NpcInitialSlots,
   NpcId,
   Party,
   PartyId,
@@ -168,6 +169,33 @@ function assertSlotExists(session: ScenarioSession, slotId: SlotId): ExclusiveSl
   const slot = session.scenario.slots[slotId]
   assertPresent(slot, `Slot not found: ${slotId}`)
   return slot
+}
+
+function assertSlotTargetExists(session: ScenarioSession, value: SlotAssignableValue): void {
+  if (typeof value === 'string' || value.type === 'abstract') {
+    return
+  }
+
+  const exists = (() => {
+    switch (value.type) {
+      case 'scene':
+        return session.scenario.scenes[value.id] !== undefined
+      case 'npc':
+        return session.scenario.npcs[value.id] !== undefined
+      case 'pc':
+        return session.scenario.pcs[value.id] !== undefined
+      case 'party':
+        return session.scenario.parties[value.id] !== undefined
+      default: {
+        const exhaustive: never = value
+        throw new Error(`Unknown slot target: ${JSON.stringify(exhaustive)}`)
+      }
+    }
+  })()
+
+  if (!exists) {
+    throw new Error(`Slot target not found: ${value.type} ${value.id}`)
+  }
 }
 
 function assertEventExists(session: ScenarioSession, eventId: EventId): ConditionalEvent {
@@ -434,6 +462,7 @@ function assignSlotInternal(
   createFactIfMissing: boolean,
 ): FactId {
   const slot = assertSlotExists(session, slotId)
+  assertSlotTargetExists(session, value)
   const key = slotValueKey(slot.kind, value)
   let slotValue = slot.values.find((candidate) => candidate.key === key)
   if (!slotValue) {
@@ -1080,6 +1109,26 @@ export function createClue(
   return { ...result, clueId, factId }
 }
 
+function npcInitialSlotsForStorage(initial: NpcInitialSlots | undefined): NpcInitialSlots | undefined {
+  if (!initial) {
+    return undefined
+  }
+  const stored = { ...initial }
+  delete stored.knowledgeFactIds
+  return Object.keys(stored).length > 0 ? stored : undefined
+}
+
+function addNpcKnowledgeLink(session: ScenarioSession, npcId: NpcId, factId: FactId): void {
+  const fact = assertFactExists(session, factId)
+  const links = fact.links ?? []
+  if (!links.some((link) => (
+    link.type === 'npc' && link.id === npcId && link.relation === 'knowledge'
+  ))) {
+    links.push({ type: 'npc', id: npcId, relation: 'knowledge' })
+  }
+  fact.links = links
+}
+
 export function createNpc(
   session: ReadonlyScenarioSession,
   input: CreateNpcInput,
@@ -1097,7 +1146,7 @@ export function createNpc(
         publicProfile: input.publicProfile,
         keeperSecret: input.keeperSecret,
         staticProfile: input.staticProfile,
-        initialDynamicSlots: input.initialDynamicSlots,
+        initialDynamicSlots: npcInitialSlotsForStorage(input.initialDynamicSlots),
         projectionLinks: input.projectionLinks,
       }
       const owner: LinkedRef = { type: 'npc', id: npcId }
@@ -1113,6 +1162,9 @@ export function createNpc(
       }
       if (initial?.emotion) {
         addGeneratedSlot(draft, owner, 'npc-emotion', initial.emotion, options.changeId ?? nextChangeId(session))
+      }
+      for (const factId of initial?.knowledgeFactIds ?? []) {
+        addNpcKnowledgeLink(draft, npcId, factId)
       }
     },
     options,

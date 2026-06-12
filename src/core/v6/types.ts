@@ -48,9 +48,12 @@ export interface KeeperText {
 
 export type TextBlock = PublicText | KeeperText
 
+export type LinkedRefRelation = 'knowledge'
+
 export interface LinkedRef {
   type: 'scene' | 'npc' | 'item' | 'clue' | 'fact' | 'revelation' | 'event' | 'pc' | 'party'
   id: EntityId
+  relation?: LinkedRefRelation
 }
 
 export interface ConditionLink {

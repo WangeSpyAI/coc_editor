@@ -220,6 +220,34 @@ describe('v6 Phase 1 core model', () => {
     expect(session.scenario.facts[clue.factId].statement).toBe('地下室から腐臭がする')
   })
 
+  it('normalizes NPC initial knowledge into marked fact links instead of keeping it as an initial slot source', () => {
+    let session = withTwoScenes()
+    const knowledge = createFact(session, {
+      statement: 'ノットは地下室の鍵が書斎にあると知っている',
+      initial: true,
+    })
+    session = knowledge.session
+
+    session = createNpc(session, {
+      id: 'npc-knott',
+      name: 'ノット',
+      publicProfile: publicText('礼儀正しい家主。'),
+      staticProfile: { personality: '実務的' },
+      initialDynamicSlots: {
+        location: { type: 'scene', id: 'sc-study' },
+        knowledgeFactIds: [knowledge.factId],
+      },
+    }).session
+
+    expect(session.scenario.npcs['npc-knott'].initialDynamicSlots?.knowledgeFactIds).toBeUndefined()
+    expect(session.scenario.facts[knowledge.factId].links).toContainEqual({
+      type: 'npc',
+      id: 'npc-knott',
+      relation: 'knowledge',
+    })
+    expect(session.scenario.slots).not.toHaveProperty('slot-npc-knott-knowledge')
+  })
+
   it('assignSlot is the exclusive entrance: it retires the old fact, updates SlotState, and conditions follow the new fact', () => {
     let session = withTwoScenes()
     session = createItem(session, {
@@ -240,6 +268,36 @@ describe('v6 Phase 1 core model', () => {
     expect(session.state.slotStates[slotId].currentFactId).toBe(moved.factId)
     expect(evaluateConditionLinks(session.state.factStates, [{ factId: previousFactId }])).toBe(false)
     expect(evaluateConditionLinks(session.state.factStates, [{ factId: moved.factId }])).toBe(true)
+  })
+
+  it('rejects concrete slot targets that do not exist while keeping abstract targets free-form', () => {
+    let session = withTwoScenes()
+    session = createItem(session, {
+      id: 'obj-diary',
+      name: '日記',
+      initialLocation: { type: 'scene', id: 'sc-study' },
+    }).session
+
+    const slotId = 'slot-obj-diary-location' satisfies SlotId
+    const invalidTargets = [
+      { type: 'scene', id: 'sc-missing' },
+      { type: 'npc', id: 'npc-missing' },
+      { type: 'pc', id: 'pc-missing' },
+      { type: 'party', id: 'party-missing' },
+    ] as const
+
+    for (const target of invalidTargets) {
+      expect(() => assignSlot(session, slotId, target)).toThrow(
+        new RegExp(`Slot target not found: ${target.type} ${target.id}`),
+      )
+    }
+
+    const assigned = assignSlot(session, slotId, { type: 'abstract', label: '死亡/退場' }).session
+    const currentFactId = assigned.state.slotStates[slotId].currentFactId
+    const value = assigned.scenario.slots[slotId].values.find((candidate) => (
+      candidate.factId === currentFactId
+    ))
+    expect(value?.label).toBe('死亡/退場')
   })
 
   it('records fact changes, slot changes, and event application under the same change/log changeId', () => {

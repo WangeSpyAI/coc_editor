@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ScenarioSession } from '../types'
-import { assignSlot } from '../engine'
+import { assignSlot, createFact } from '../engine'
 import {
   findCurrentDisclosure,
   findCurrentLocation,
@@ -45,7 +45,13 @@ describe('v6 Phase 2 projection queries', () => {
   it('projects NPC dynamic current values including location, intent, fear, emotion, and knowledge facts', () => {
     const { session, ids } = buildMiniScenario()
 
-    const card = projectNpcCard(session, 'npc-suzuki')
+    const withGenericNpcLink = createFact(session, {
+      statement: '鈴木は玄関ホールにいると噂されている',
+      initial: true,
+      links: [{ type: 'npc', id: 'npc-suzuki' }],
+    }).session
+
+    const card = projectNpcCard(withGenericNpcLink, 'npc-suzuki')
 
     expect(card.npc.name).toBe('鈴木')
     expect(card.location?.label).toBe('玄関ホール')
@@ -113,6 +119,7 @@ describe('v6 Phase 2 projection queries', () => {
       matchKind: 'current-value',
     })
     expect(key[0]?.snippet).toContain('鈴木')
+    expect(key[0]?.snippet).toContain('開示状態: 公開')
 
     const diarySearch = searchScenario(session, '日記はどこ?')
     expect(diarySearch[0]).toMatchObject({

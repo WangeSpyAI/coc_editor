@@ -20,9 +20,13 @@ describe('v6 Phase 3 Markdown export', () => {
     expect(markdown).toContain('**PL描写**')
     expect(markdown).toContain('壁一面の本棚と重い机がある。')
     expect(markdown).toContain('> 【KP】日記を見つけたら、地下通路の存在を真相へ接続する。')
-    expect(markdown).toContain('- Item: 古い日記 | 所在: 書斎 | 開示: discoverable')
-    expect(markdown).toContain('- Clue: 日記の破れた頁 | 所在: 書斎 | 開示: undiscovered')
+    expect(markdown).toContain('- Item: 古い日記 | 所在: 書斎 | 開示: 発見可能')
+    expect(markdown).toContain('- Clue: 日記の破れた頁 | 所在: 書斎 | 開示: 未発見')
+    expect(markdown).not.toContain('開示: discoverable')
+    expect(markdown).not.toContain('開示: undiscovered')
     expect(markdown).toContain('- 発生可能: 書斎の机を調べる')
+    expect(markdown).toContain('- NPC: 青木 | 現在地: 裏庭 | 意図: 裏庭の足跡を調べる | 恐れ: 証拠を鈴木に消される')
+    expect(markdown).not.toContain('感情: 不明')
   })
 
   it('exports revelation progress and hides generated facts from the default ledger', () => {
