@@ -153,6 +153,8 @@ export interface WorldState {
   firedTriggerIds: Set<string> // firedOnce トリガーの発火済みセット
   log: LogEntry[] // 描写ログ
   step: number // stabilize のステップカウンタ
+  parties: Party[] // パーティ編成（初期値はPC全員のデフォルトパーティ）
+  activePartyId: string | null // 現在操作中のパーティ（PCなしなら null）
 }
 
 /** EntityState の完全読み取り専用版 */
@@ -173,6 +175,8 @@ export type ReadonlyWorldState = {
   readonly firedTriggerIds: ReadonlySet<string>
   readonly log: readonly LogEntry[]
   readonly step: number
+  readonly parties: readonly ReadonlyParty[]
+  readonly activePartyId: string | null
 }
 
 /** 場面描写の1要素。composeSceneDescription が返す（出典エンティティ + 描写テキスト） */
@@ -196,5 +200,13 @@ export interface Party {
   id: string
   name: string
   memberIds: string[] // PCエンティティのID
-  locationId: string // 現在の場所エンティティID
+  locationId: string | null // 現在の場所エンティティID（null = ルート直下）
+}
+
+/** Party の完全読み取り専用版 */
+export type ReadonlyParty = {
+  readonly id: string
+  readonly name: string
+  readonly memberIds: readonly string[]
+  readonly locationId: string | null
 }

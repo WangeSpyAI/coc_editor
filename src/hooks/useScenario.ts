@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react'
 import type { Scenario, WorldState, ReadonlyWorldState, Entity, Action, Effect, Trigger, LogEntry, Category } from '../core/types'
 import {
   initializeWorldState,
+  createDefaultParties,
   stabilize,
   applyActionEffects as engineApplyActionEffects,
   applyEffect as engineApplyEffect,
@@ -54,6 +55,13 @@ function loadSession(): ScenarioSession | null {
     // Migrate: 古いデータに connections がない場合は補完
     for (const e of data.scenario.entities) {
       if (!e.connections) e.connections = []
+    }
+    // Migrate: 古いデータに parties / activePartyId がない場合は
+    // initializeWorldState と同じロジック（createDefaultParties）で補完
+    if (!data.worldState.parties) {
+      const defaults = createDefaultParties(data.scenario)
+      data.worldState.parties = defaults.parties
+      data.worldState.activePartyId = defaults.activePartyId
     }
     return data as ScenarioSession
   } catch {

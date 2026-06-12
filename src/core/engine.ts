@@ -18,6 +18,7 @@ import type {
   Trigger,
   Action,
   LogEntry,
+  Party,
   ScenePart,
 } from './types'
 
@@ -456,6 +457,53 @@ export function getAvailableActions(
 }
 
 /**
+ * PLアクションの行為者候補を返す。
+ *
+ * アクティブパーティのメンバーのうちラベル 'PC' を持つエンティティに限り、
+ * - requiredItems: 各アイテムがそのPCの子孫（=所持）であること（全て満たす）
+ * - requiredKnowledge: 各値がそのPCのいずれかのカテゴリ値に含まれること
+ *   （非排他=includes、排他=一致。全て満たす）
+ * を満たすものだけを返す。アクティブパーティがなければ空配列。
+ *
+ * isPlayerAction でないアクションへの適用可否は呼び出し側（UI層）の責務。
+ */
+export function getEligibleActors(
+  action: Action,
+  worldState: ReadonlyWorldState,
+  scenario: Scenario,
+): string[] {
+  const party = worldState.parties.find((p) => p.id === worldState.activePartyId)
+  if (!party) return []
+
+  const states = worldState.entityStates
+  const childrenMap = buildChildrenMap(states)
+  const entityMap = new Map(scenario.entities.map((e) => [e.id, e]))
+
+  return party.memberIds.filter((memberId) => {
+    const entity = entityMap.get(memberId)
+    if (!entity?.labels.includes('PC')) return false
+
+    // 必要アイテム: 全てがこのPCの子孫（所持）であること
+    if (action.requiredItems && action.requiredItems.length > 0) {
+      const owned = new Set(getDescendants(memberId, childrenMap))
+      if (!action.requiredItems.every((itemId) => owned.has(itemId))) return false
+    }
+
+    // 必要知識: 全ての値がこのPCのいずれかのカテゴリ値に含まれること
+    if (action.requiredKnowledge && action.requiredKnowledge.length > 0) {
+      const state = states[memberId]
+      if (!state) return false
+      const values = Object.values(state.categoryValues)
+      const hasKnowledge = (v: string) =>
+        values.some((cv) => (typeof cv === 'string' ? cv === v : cv.includes(v)))
+      if (!action.requiredKnowledge.every(hasKnowledge)) return false
+    }
+
+    return true
+  })
+}
+
+/**
  * アクションの効果を適用する（stabilize は呼ばない）。
  * 呼び出し元が mutateAndStabilize 経由で stabilize を保証する。
  *
@@ -549,6 +597,29 @@ export function fireAction(
 
 // ===== ワールド状態初期化 =====
 
+/**
+ * シナリオからデフォルトパーティを導出する。
+ * ラベル 'PC' を持つ全エンティティで「パーティ」を1つ作る（決定的ID）。
+ * locationId は先頭PCの parentId（null = ルート直下）。PCがいなければパーティなし。
+ *
+ * initializeWorldState と loadSession の旧データ補完が両方この関数を通る —
+ * 新規作成とマイグレーションでパーティ構成が乖離する道がない。
+ */
+export function createDefaultParties(
+  scenario: Scenario,
+): Pick<WorldState, 'parties' | 'activePartyId'> {
+  const pcs = scenario.entities.filter((e) => e.labels.includes('PC'))
+  if (pcs.length === 0) return { parties: [], activePartyId: null }
+
+  const party: Party = {
+    id: 'party-default',
+    name: 'パーティ',
+    memberIds: pcs.map((e) => e.id),
+    locationId: pcs[0].parentId,
+  }
+  return { parties: [party], activePartyId: party.id }
+}
+
 export function initializeWorldState(scenario: Scenario): WorldState {
   const entityStates: Record<string, EntityState> = {}
 
@@ -577,6 +648,7 @@ export function initializeWorldState(scenario: Scenario): WorldState {
     firedTriggerIds: new Set(),
     log: [],
     step: 0,
+    ...createDefaultParties(scenario),
   }
 }
 

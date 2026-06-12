@@ -5,12 +5,13 @@
  * テストシナリオは「悪霊の家」を簡略化したもの。
  */
 import { describe, it, expect } from 'vitest'
-import type { Entity, Scenario } from '../types'
+import type { Action, Entity, Scenario } from '../types'
 import {
   initializeWorldState,
   stabilize,
   fireAction,
   getAvailableActions,
+  getEligibleActors,
   getPendingTriggers,
   evaluateCondition,
   buildChildrenMap,
@@ -888,5 +889,172 @@ describe('composeSceneDescription', () => {
       { entityId: 'study', text: '埃っぽい書斎。本棚が壁を覆っている。' },
       { entityId: 'desk', text: '机の引き出しは閉まっている。' },
     ])
+  })
+})
+
+// ===== パーティ初期化テスト =====
+
+describe('パーティ初期化', () => {
+  it('ラベルPCを持つ全エンティティでデフォルトパーティ「パーティ」が作られる', () => {
+    const entities: Entity[] = [
+      { id: 'room', name: '部屋', parentId: null, description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+      { id: 'pc-akira', name: '明', parentId: 'room', description: '', labels: ['PC'], connections: [], categories: [], actions: [], triggers: [] },
+      { id: 'pc-yui', name: '結衣', parentId: 'room', description: '', labels: ['PC'], connections: [], categories: [], actions: [], triggers: [] },
+      { id: 'npc-misaki', name: '美咲', parentId: 'room', description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+    ]
+    const ws = initializeWorldState(makeScenario(entities))
+
+    expect(ws.parties.length).toBe(1)
+    expect(ws.parties[0].id).toBe('party-default')
+    expect(ws.parties[0].name).toBe('パーティ')
+    expect(ws.parties[0].memberIds).toEqual(['pc-akira', 'pc-yui'])
+    expect(ws.activePartyId).toBe('party-default')
+  })
+
+  it('locationId は先頭PCの parentId になる', () => {
+    const entities: Entity[] = [
+      { id: 'hall', name: '廊下', parentId: null, description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+      { id: 'pc-akira', name: '明', parentId: 'hall', description: '', labels: ['PC'], connections: [], categories: [], actions: [], triggers: [] },
+    ]
+    const ws = initializeWorldState(makeScenario(entities))
+
+    expect(ws.parties[0].locationId).toBe('hall')
+  })
+
+  it('先頭PCがルート直下なら locationId は null', () => {
+    const entities: Entity[] = [
+      { id: 'pc-akira', name: '明', parentId: null, description: '', labels: ['PC'], connections: [], categories: [], actions: [], triggers: [] },
+    ]
+    const ws = initializeWorldState(makeScenario(entities))
+
+    expect(ws.parties[0].locationId).toBe(null)
+  })
+
+  it('PCがいなければ parties は空で activePartyId は null', () => {
+    const entities: Entity[] = [
+      { id: 'room', name: '部屋', parentId: null, description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+      { id: 'npc-misaki', name: '美咲', parentId: 'room', description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+    ]
+    const ws = initializeWorldState(makeScenario(entities))
+
+    expect(ws.parties).toEqual([])
+    expect(ws.activePartyId).toBe(null)
+  })
+})
+
+// ===== 行為者候補テスト =====
+
+describe('getEligibleActors', () => {
+  // 部屋にPC2人とNPC1人。明は革袋を持ち、その中に鍵がある（子孫の推移性を確認）。
+  const pcCategories = () => [
+    { id: 'knowledge', name: '知識', exclusive: false, options: ['噂', '儀式'] },
+    { id: 'job', name: '職業', exclusive: true, options: ['探偵', '医師'] },
+  ]
+  const baseEntities = (): Entity[] => [
+    { id: 'room', name: '部屋', parentId: null, description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+    { id: 'pc-akira', name: '明', parentId: 'room', description: '', labels: ['PC'], connections: [], categories: pcCategories(), actions: [], triggers: [] },
+    { id: 'pc-yui', name: '結衣', parentId: 'room', description: '', labels: ['PC'], connections: [], categories: pcCategories(), actions: [], triggers: [] },
+    { id: 'npc-misaki', name: '美咲', parentId: 'room', description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+    { id: 'pouch', name: '革袋', parentId: 'pc-akira', description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+    { id: 'key', name: '鍵', parentId: 'pouch', description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+  ]
+
+  function makeAction(partial: Partial<Action>): Action {
+    return {
+      id: 'act-test',
+      name: 'テスト',
+      entityId: 'room',
+      description: '',
+      isPlayerAction: true,
+      effects: [],
+      ...partial,
+    }
+  }
+
+  it('アクティブパーティのメンバーのうちラベルPCのみが候補になる', () => {
+    const entities = baseEntities()
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+    // パーティにNPCを混ぜても候補にはPCだけが残る
+    ws.parties[0].memberIds.push('npc-misaki')
+
+    expect(getEligibleActors(makeAction({}), ws, scenario)).toEqual(['pc-akira', 'pc-yui'])
+  })
+
+  it('requiredItems: アイテムを子孫に持つPCだけが候補になる（推移的な所持）', () => {
+    const entities = baseEntities()
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+
+    // 鍵は 革袋 の中、革袋は 明 の中 → 明だけが「鍵を所持」
+    const action = makeAction({ requiredItems: ['key'] })
+    expect(getEligibleActors(action, ws, scenario)).toEqual(['pc-akira'])
+
+    // 誰も持っていないアイテムを要求 → 候補なし
+    const impossible = makeAction({ requiredItems: ['key', 'no-such-item'] })
+    expect(getEligibleActors(impossible, ws, scenario)).toEqual([])
+  })
+
+  it('requiredKnowledge: 非排他カテゴリの値を持つPCだけが候補になる', () => {
+    const entities = baseEntities()
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+    const map = buildChildrenMap(ws.entityStates)
+    applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: 'pc-akira' }, categoryId: 'knowledge', value: '噂' },
+      'pc-akira', ws.entityStates, entities, map,
+    )
+
+    const action = makeAction({ requiredKnowledge: ['噂'] })
+    expect(getEligibleActors(action, ws, scenario)).toEqual(['pc-akira'])
+  })
+
+  it('requiredKnowledge: 排他カテゴリの単値一致でも判定される', () => {
+    const entities = baseEntities()
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+    const map = buildChildrenMap(ws.entityStates)
+    // 初期値は両PCとも job=探偵。明だけ医師に変更。
+    applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: 'pc-akira' }, categoryId: 'job', value: '医師' },
+      'pc-akira', ws.entityStates, entities, map,
+    )
+
+    expect(getEligibleActors(makeAction({ requiredKnowledge: ['医師'] }), ws, scenario)).toEqual(['pc-akira'])
+    expect(getEligibleActors(makeAction({ requiredKnowledge: ['探偵'] }), ws, scenario)).toEqual(['pc-yui'])
+  })
+
+  it('requiredItems と requiredKnowledge は全て満たす必要がある', () => {
+    const entities = baseEntities()
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+    const map = buildChildrenMap(ws.entityStates)
+    // 結衣は知識だけ持つ（鍵は明が所持）→ 両方満たすPCはいない
+    applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: 'pc-yui' }, categoryId: 'knowledge', value: '噂' },
+      'pc-yui', ws.entityStates, entities, map,
+    )
+
+    const action = makeAction({ requiredItems: ['key'], requiredKnowledge: ['噂'] })
+    expect(getEligibleActors(action, ws, scenario)).toEqual([])
+
+    // 明にも知識を与えると、明だけが両方満たす
+    applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: 'pc-akira' }, categoryId: 'knowledge', value: '噂' },
+      'pc-akira', ws.entityStates, entities, map,
+    )
+    expect(getEligibleActors(action, ws, scenario)).toEqual(['pc-akira'])
+  })
+
+  it('アクティブパーティがなければ空配列を返す', () => {
+    // PCなしシナリオ → activePartyId は null
+    const entities: Entity[] = [
+      { id: 'room', name: '部屋', parentId: null, description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+      { id: 'npc-misaki', name: '美咲', parentId: 'room', description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+    ]
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+
+    expect(getEligibleActors(makeAction({}), ws, scenario)).toEqual([])
   })
 })
