@@ -317,6 +317,7 @@ export function stabilize(
             // ログ
             worldState.log.push({
               timestamp: step,
+              at: Date.now(),
               type: 'trigger',
               sourceEntityId: entity.id,
               description: `トリガー「${trigger.name}」が発火`,
@@ -493,6 +494,7 @@ export function applyActionEffects(
     : ''
   worldState.log.push({
     timestamp: worldState.step,
+    at: Date.now(),
     type: 'action',
     sourceEntityId: ownerEntity.id,
     description: desc + rollSuffix,

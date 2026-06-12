@@ -177,6 +177,7 @@ export type ReadonlyWorldState = {
 
 export interface LogEntry {
   timestamp: number // step number
+  at?: number // 実時刻 (epoch ms)。旧データには無い
   type: 'action' | 'trigger' | 'system'
   sourceEntityId: string
   description: string

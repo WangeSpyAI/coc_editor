@@ -644,6 +644,47 @@ describe('$actor のEffect内解決', () => {
   })
 })
 
+// ===== ログ実時刻テスト =====
+
+describe('ログの実時刻', () => {
+  it('アクションログとトリガーログに at (epoch ms) が記録される', () => {
+    const entities: Entity[] = [
+      {
+        id: 'room', name: '部屋', parentId: null, description: '', labels: [], connections: [],
+        categories: [
+          { id: 'light', name: '照明', exclusive: true, options: ['明るい', '暗い'] },
+          { id: 'alarm', name: '警報', exclusive: true, options: ['off', 'on'] },
+        ],
+        actions: [
+          {
+            id: 'act-switch', name: '消灯', entityId: 'room', description: '部屋の照明を消した',
+            isPlayerAction: false,
+            effects: [{ type: 'setCategory', target: { type: 'self' }, categoryId: 'light', value: '暗い' }],
+          },
+        ],
+        triggers: [
+          {
+            id: 'trg-alarm', name: '暗い→警報', entityId: 'room',
+            condition: { clauses: [{ reference: { type: 'self' }, categoryId: 'light', value: '暗い' }] },
+            effects: [{ type: 'setCategory', target: { type: 'self' }, categoryId: 'alarm', value: 'on' }],
+          },
+        ],
+      },
+    ]
+
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+
+    fireAction('act-switch', ws, scenario)
+
+    expect(ws.log.length).toBe(2) // action + trigger
+    for (const entry of ws.log) {
+      // 値は実行時刻に依存するため、number として存在することのみ確認
+      expect(typeof entry.at).toBe('number')
+    }
+  })
+})
+
 // ===== 進入条件テスト =====
 
 describe('canEnter（場所の進入条件）', () => {

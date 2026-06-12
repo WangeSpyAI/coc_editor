@@ -160,7 +160,7 @@ export function useScenario() {
         ws.entityStates[entityId] = { entityId, parentId, categoryValues }
       },
       log(type, sourceEntityId, description, actorId) {
-        ws.log.push({ timestamp: ws.step, type, sourceEntityId, description, actorId })
+        ws.log.push({ timestamp: ws.step, at: Date.now(), type, sourceEntityId, description, actorId })
       },
     }
 
