@@ -402,13 +402,32 @@ export function useScenario() {
     if (!sessionRef.current) return
     const { worldState } = sessionRef.current
     const active = worldState.parties.find((p) => p.id === worldState.activePartyId)
-    if (!active || active.memberIds.includes(entityId)) return
+    const entityState = worldState.entityStates[entityId]
+    if (!entityState) return
+    if (active?.memberIds.includes(entityId)) return
 
     mutateAndStabilize((api) => {
+      const partiesWithoutMember = api.worldState.parties.map((p) =>
+        p.memberIds.includes(entityId) ? { ...p, memberIds: p.memberIds.filter((m) => m !== entityId) } : p
+      )
+
+      if (!active) {
+        const partyId = api.worldState.parties.some((p) => p.id === 'party-default')
+          ? genId('party')
+          : 'party-default'
+        api.setParties(
+          [
+            ...partiesWithoutMember,
+            { id: partyId, name: 'パーティ', memberIds: [entityId], locationId: entityState.parentId },
+          ],
+          partyId,
+        )
+        return
+      }
+
       api.setParties(
-        api.worldState.parties.map((p) => {
+        partiesWithoutMember.map((p) => {
           if (p.id === active.id) return { ...p, memberIds: [...p.memberIds, entityId] }
-          if (p.memberIds.includes(entityId)) return { ...p, memberIds: p.memberIds.filter((m) => m !== entityId) }
           return p
         }),
         api.worldState.activePartyId,

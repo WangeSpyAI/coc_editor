@@ -23,7 +23,7 @@ function formatTime(entry: LogEntry): string {
 }
 
 /**
- * 描写ログペイン — layout-main 下部に常時表示（エンティティ未選択でも）。
+ * 描写ログペイン — layout-log スロットに常時表示（エンティティ未選択でも）。
  * セッションの成果物である描写テキストを時系列で一覧し、コピーできる。
  */
 export function LogPane({ log, scenario }: Props) {

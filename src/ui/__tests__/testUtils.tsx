@@ -41,3 +41,15 @@ export function changeSelect(select: HTMLSelectElement, value: string) {
     select.dispatchEvent(new Event('change', { bubbles: true }))
   })
 }
+
+export function changeInput(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  act(() => {
+    const prototype = input instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype
+    const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+    setter?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}

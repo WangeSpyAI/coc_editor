@@ -58,6 +58,7 @@ describe('EntityTree', () => {
         selectedId={null}
         onSelect={vi.fn()}
         onAddEntity={vi.fn()}
+        onAddToParty={vi.fn()}
       />,
     )
 

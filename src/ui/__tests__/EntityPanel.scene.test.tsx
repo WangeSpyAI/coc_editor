@@ -128,7 +128,9 @@ describe('EntityPanel scene mode', () => {
         onAddCategoryDef={vi.fn()}
         onUpdateCategoryDef={vi.fn()}
         onRemoveCategoryDef={vi.fn()}
+        onUpdateAction={vi.fn()}
         onRemoveAction={vi.fn()}
+        onUpdateTrigger={vi.fn()}
         onRemoveTrigger={vi.fn()}
         onFulfill={vi.fn()}
       />,
@@ -218,7 +220,9 @@ describe('EntityPanel scene mode', () => {
         onAddCategoryDef={vi.fn()}
         onUpdateCategoryDef={vi.fn()}
         onRemoveCategoryDef={vi.fn()}
+        onUpdateAction={vi.fn()}
         onRemoveAction={vi.fn()}
+        onUpdateTrigger={vi.fn()}
         onRemoveTrigger={vi.fn()}
         onFulfill={vi.fn()}
       />,
@@ -279,7 +283,9 @@ describe('EntityPanel scene mode', () => {
         onAddCategoryDef={vi.fn()}
         onUpdateCategoryDef={vi.fn()}
         onRemoveCategoryDef={vi.fn()}
+        onUpdateAction={vi.fn()}
         onRemoveAction={vi.fn()}
+        onUpdateTrigger={vi.fn()}
         onRemoveTrigger={vi.fn()}
         onFulfill={vi.fn()}
       />,

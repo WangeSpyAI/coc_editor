@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import type { Entity, Category, ReadonlyWorldState, Scenario, Action, ConditionClause } from '../core/types'
+import type { Entity, Category, ReadonlyWorldState, Scenario, Action, ConditionClause, Trigger } from '../core/types'
 import {
   buildChildrenMap,
   canEnter,
@@ -13,6 +13,7 @@ import {
 import { StateBadges } from './StateBadges'
 import { PendingList } from './PendingPanel'
 import { describeClause } from './format'
+import { ActionDefinitionForm, TriggerDefinitionForm } from './editorParts'
 
 interface Props {
   entity: Entity
@@ -23,12 +24,14 @@ interface Props {
   onMoveParty: (locationId: string) => void
   onShareKnowledge: (fromEntityId: string, toEntityId: string, categoryId: string, value: string) => void
   onSetCategory: (entityId: string, categoryId: string, value: string) => void
-  onUpdateEntity: (entityId: string, patch: Partial<Pick<Entity, 'name' | 'description' | 'labels' | 'parentId' | 'connections'>>) => void
+  onUpdateEntity: (entityId: string, patch: Partial<Pick<Entity, 'name' | 'description' | 'labels' | 'parentId' | 'connections' | 'entryCondition'>>) => void
   onRemoveEntity: (entityId: string) => void
   onAddCategoryDef: (entityId: string, category: Omit<Category, 'id'>) => string
-  onUpdateCategoryDef: (entityId: string, categoryId: string, patch: Partial<Pick<Category, 'name' | 'exclusive' | 'options'>>) => void
+  onUpdateCategoryDef: (entityId: string, categoryId: string, patch: Partial<Pick<Category, 'name' | 'exclusive' | 'options' | 'descriptions'>>) => void
   onRemoveCategoryDef: (entityId: string, categoryId: string) => void
+  onUpdateAction: (entityId: string, actionId: string, patch: Partial<Omit<Action, 'id' | 'entityId'>>) => void
   onRemoveAction: (entityId: string, actionId: string) => void
+  onUpdateTrigger: (entityId: string, triggerId: string, patch: Partial<Omit<Trigger, 'id' | 'entityId'>>) => void
   onRemoveTrigger: (entityId: string, triggerId: string) => void
   onFulfill: (ownerEntityId: string, clause: ConditionClause) => void
 }
@@ -38,7 +41,7 @@ export function EntityPanel({
   onAction, onNavigate, onMoveParty, onShareKnowledge, onSetCategory,
   onUpdateEntity, onRemoveEntity,
   onAddCategoryDef, onUpdateCategoryDef, onRemoveCategoryDef,
-  onRemoveAction, onRemoveTrigger, onFulfill,
+  onUpdateAction, onRemoveAction, onUpdateTrigger, onRemoveTrigger, onFulfill,
 }: Props) {
   const state = worldState.entityStates[entity.id]
   const [selectedActors, setSelectedActors] = useState<Record<string, string>>({})
@@ -240,11 +243,13 @@ export function EntityPanel({
                 owner={owner}
                 currentEntity={entity}
                 action={action}
+                scenario={scenario}
                 actorControls={{ mode: 'none' }}
                 onRun={(rollResult) => {
                   if (rollResult) onAction(action.id, undefined, rollResult)
                   else onAction(action.id)
                 }}
+                onUpdate={(patch) => onUpdateAction(owner.id, action.id, patch)}
                 onRemove={() => onRemoveAction(owner.id, action.id)}
               />
             ))}
@@ -261,6 +266,7 @@ export function EntityPanel({
           selectedActors={selectedActors}
           onSelectActor={(actionId, actorId) => setSelectedActors((prev) => ({ ...prev, [actionId]: actorId }))}
           onAction={onAction}
+          onUpdateAction={onUpdateAction}
           onRemoveAction={onRemoveAction}
         />
       )}
@@ -273,31 +279,17 @@ export function EntityPanel({
       {entity.triggers.length > 0 && (
         <Section title="トリガー">
           {entity.triggers.map((trigger) => {
-            const fired = trigger.firedOnce && worldState.firedTriggerIds.has(trigger.id)
+            const fired = Boolean(trigger.firedOnce && worldState.firedTriggerIds.has(trigger.id))
             return (
               <div key={trigger.id} className="trigger-card" style={{ opacity: fired ? 0.5 : 1 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>
-                    {trigger.name}
-                    {trigger.firedOnce && (
-                      <span style={{ fontSize: 10, color: fired ? 'var(--success)' : 'var(--text-dim)', marginLeft: 6 }}>
-                        {fired ? '発火済' : '一度限り'}
-                      </span>
-                    )}
-                  </span>
-                  <button className="btn btn-sm btn-danger" onClick={() => onRemoveTrigger(entity.id, trigger.id)}
-                    style={{ padding: '2px 6px', fontSize: 10 }}>×</button>
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>
-                  条件: {trigger.condition.clauses.map((c) => describeClause(c, entity, scenario)).join(' AND ')}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
-                  効果: {trigger.effects.map((e) =>
-                    e.type === 'setCategory' ? `${e.categoryId}→${e.value}` :
-                    e.type === 'removeCategory' ? `${e.categoryId}−${e.value}` :
-                    e.type === 'move' ? `移動→${e.newParentId}` : '?'
-                  ).join(', ')}
-                </div>
+                <TriggerCard
+                  owner={entity}
+                  trigger={trigger}
+                  scenario={scenario}
+                  fired={fired}
+                  onUpdate={(patch) => onUpdateTrigger(entity.id, trigger.id, patch)}
+                  onRemove={() => onRemoveTrigger(entity.id, trigger.id)}
+                />
               </div>
             )
           })}
@@ -427,6 +419,7 @@ function SceneActions({
   selectedActors,
   onSelectActor,
   onAction,
+  onUpdateAction,
   onRemoveAction,
 }: {
   actions: { entity: Entity; action: Action }[]
@@ -436,6 +429,7 @@ function SceneActions({
   selectedActors: Readonly<Record<string, string>>
   onSelectActor: (actionId: string, actorId: string) => void
   onAction: (actionId: string, actorId?: string, rollResult?: 'success' | 'failure') => void
+  onUpdateAction: (entityId: string, actionId: string, patch: Partial<Omit<Action, 'id' | 'entityId'>>) => void
   onRemoveAction: (entityId: string, actionId: string) => void
 }) {
   const playerActions = actions.filter(({ action }) => action.isPlayerAction)
@@ -457,6 +451,7 @@ function SceneActions({
                 selectedActorId={selectedActors[action.id]}
                 onSelectActor={(actorId) => onSelectActor(action.id, actorId)}
                 onAction={onAction}
+                onUpdateAction={onUpdateAction}
                 onRemoveAction={onRemoveAction}
               />
             ))}
@@ -473,8 +468,10 @@ function SceneActions({
                 owner={owner}
                 currentEntity={entity}
                 action={action}
+                scenario={scenario}
                 actorControls={{ mode: 'none' }}
                 onRun={(rollResult) => onAction(action.id, undefined, rollResult)}
+                onUpdate={(patch) => onUpdateAction(owner.id, action.id, patch)}
                 onRemove={() => onRemoveAction(owner.id, action.id)}
               />
             ))}
@@ -506,6 +503,7 @@ function SceneActionCardWithActors({
   selectedActorId,
   onSelectActor,
   onAction,
+  onUpdateAction,
   onRemoveAction,
 }: {
   owner: Entity
@@ -516,6 +514,7 @@ function SceneActionCardWithActors({
   selectedActorId?: string
   onSelectActor: (actorId: string) => void
   onAction: (actionId: string, actorId?: string, rollResult?: RollResult) => void
+  onUpdateAction: (entityId: string, actionId: string, patch: Partial<Omit<Action, 'id' | 'entityId'>>) => void
   onRemoveAction: (entityId: string, actionId: string) => void
 }) {
   const eligibleActors = getEligibleActors(action, worldState, scenario)
@@ -540,12 +539,14 @@ function SceneActionCardWithActors({
       owner={owner}
       currentEntity={currentEntity}
       action={action}
+      scenario={scenario}
       actorControls={actorControls}
       disabled={disabled}
       disabledTitle={disabledTitle}
       onRun={(rollResult) => {
         if (!disabled) onAction(action.id, actorId, rollResult)
       }}
+      onUpdate={(patch) => onUpdateAction(owner.id, action.id, patch)}
       onRemove={() => onRemoveAction(owner.id, action.id)}
     />
   )
@@ -555,22 +556,46 @@ function ActionCard({
   owner,
   currentEntity,
   action,
+  scenario,
   actorControls,
   disabled = false,
   disabledTitle,
   onRun,
+  onUpdate,
   onRemove,
 }: {
   owner: Entity
   currentEntity: Entity
   action: Action
+  scenario: Scenario
   actorControls: ActionCardActorControls
   disabled?: boolean
   disabledTitle?: string
   onRun: (rollResult?: RollResult) => void
+  onUpdate: (patch: Partial<Omit<Action, 'id' | 'entityId'>>) => void
   onRemove: () => void
 }) {
+  const [editing, setEditing] = useState(false)
   const roll = action.rollRequirement
+
+  if (editing) {
+    return (
+      <div className="action-card action-card-editing">
+        <ActionDefinitionForm
+          scenario={scenario}
+          initialOwnerId={owner.id}
+          action={action}
+          allowOwnerSelect={false}
+          submitLabel="保存"
+          onSubmit={(_, patch) => {
+            onUpdate(patch)
+            setEditing(false)
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="action-card">
@@ -633,6 +658,13 @@ function ActionCard({
           </>
         )}
         <button
+          className="btn btn-sm scene-action-edit"
+          type="button"
+          onClick={() => setEditing(true)}
+        >
+          ✎
+        </button>
+        <button
           className="btn btn-sm btn-danger scene-action-remove"
           type="button"
           onClick={onRemove}
@@ -668,6 +700,72 @@ function KnowledgeShareSection({
         ))}
       </div>
     </Section>
+  )
+}
+
+function TriggerCard({
+  owner,
+  trigger,
+  scenario,
+  fired,
+  onUpdate,
+  onRemove,
+}: {
+  owner: Entity
+  trigger: Trigger
+  scenario: Scenario
+  fired: boolean
+  onUpdate: (patch: Partial<Omit<Trigger, 'id' | 'entityId'>>) => void
+  onRemove: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+
+  if (editing) {
+    return (
+      <TriggerDefinitionForm
+        scenario={scenario}
+        initialOwnerId={owner.id}
+        trigger={trigger}
+        allowOwnerSelect={false}
+        submitLabel="保存"
+        onSubmit={(_, patch) => {
+          onUpdate(patch)
+          setEditing(false)
+        }}
+        onCancel={() => setEditing(false)}
+      />
+    )
+  }
+
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>
+          {trigger.name}
+          {trigger.firedOnce && (
+            <span style={{ fontSize: 10, color: fired ? 'var(--success)' : 'var(--text-dim)', marginLeft: 6 }}>
+              {fired ? '発火済' : '一度限り'}
+            </span>
+          )}
+        </span>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button className="btn btn-sm" type="button" onClick={() => setEditing(true)}
+            style={{ padding: '2px 6px', fontSize: 10 }}>✎</button>
+          <button className="btn btn-sm btn-danger" type="button" onClick={onRemove}
+            style={{ padding: '2px 6px', fontSize: 10 }}>×</button>
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>
+        条件: {trigger.condition.clauses.map((c) => describeClause(c, owner, scenario)).join(' AND ') || 'なし'}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+        効果: {trigger.effects.map((e) =>
+          e.type === 'setCategory' ? `${e.categoryId}→${e.value}` :
+          e.type === 'removeCategory' ? `${e.categoryId}−${e.value}` :
+          e.type === 'move' ? `移動→${e.newParentId}` : '?'
+        ).join(', ') || 'なし'}
+      </div>
+    </>
   )
 }
 
@@ -758,11 +856,28 @@ function CategoryBlock({ category, entityId, categoryValues, onSetCategory, onUp
   category: Category; entityId: string
   categoryValues?: Readonly<Record<string, string | readonly string[]>>
   onSetCategory: (entityId: string, categoryId: string, value: string) => void
-  onUpdate: (patch: Partial<Pick<Category, 'name' | 'exclusive' | 'options'>>) => void
+  onUpdate: (patch: Partial<Pick<Category, 'name' | 'exclusive' | 'options' | 'descriptions'>>) => void
   onRemove: () => void
 }) {
   const [editingOptions, setEditingOptions] = useState(false)
   const [optionsDraft, setOptionsDraft] = useState('')
+  const [editingDescriptions, setEditingDescriptions] = useState(false)
+  const [descriptionDrafts, setDescriptionDrafts] = useState<Record<string, string>>({})
+
+  const openDescriptions = () => {
+    setDescriptionDrafts({ ...(category.descriptions ?? {}) })
+    setEditingDescriptions(true)
+  }
+
+  const saveDescriptions = () => {
+    const descriptions = Object.fromEntries(
+      Object.entries(descriptionDrafts)
+        .map(([key, value]) => [key, value.trim()])
+        .filter(([, value]) => value),
+    )
+    onUpdate({ descriptions })
+    setEditingDescriptions(false)
+  }
 
   return (
     <div className="category-block">
@@ -790,7 +905,9 @@ function CategoryBlock({ category, entityId, categoryValues, onSetCategory, onUp
       {!editingOptions ? (
         <div className="category-options-display"
           onClick={() => { setOptionsDraft(category.options.join(', ')); setEditingOptions(true) }}>
-          選択肢: {category.options.length > 0 ? category.options.join(', ') : '(なし — クリックで追加)'}
+          選択肢: {category.options.length > 0
+            ? category.options.map((option) => `${option}${category.descriptions?.[option] ? ' 📝' : ''}`).join(', ')
+            : '(なし — クリックで追加)'}
         </div>
       ) : (
         <input autoFocus value={optionsDraft} onChange={(e) => setOptionsDraft(e.target.value)}
@@ -803,6 +920,29 @@ function CategoryBlock({ category, entityId, categoryValues, onSetCategory, onUp
           style={{ width: '100%', marginTop: 4, background: 'var(--bg)', border: '1px solid var(--accent)',
             borderRadius: 'var(--radius)', padding: '3px 6px', fontSize: 11, color: 'var(--text)' }}
         />
+      )}
+
+      {!editingDescriptions ? (
+        <button className="btn btn-sm" type="button" onClick={openDescriptions} style={{ marginTop: 6, fontSize: 10 }}>
+          選択肢描写
+        </button>
+      ) : (
+        <div className="category-description-editor">
+          {category.options.map((option) => (
+            <label key={option} className="category-description-row">
+              <span>{option}</span>
+              <textarea
+                aria-label={`${option} の描写`}
+                value={descriptionDrafts[option] ?? ''}
+                onChange={(e) => setDescriptionDrafts((prev) => ({ ...prev, [option]: e.target.value }))}
+              />
+            </label>
+          ))}
+          <div className="editor-actions">
+            <button className="btn btn-sm btn-primary" type="button" onClick={saveDescriptions}>描写保存</button>
+            <button className="btn btn-sm" type="button" onClick={() => setEditingDescriptions(false)}>キャンセル</button>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -34,6 +34,7 @@ export function App() {
     createScenario,
     loadScenario,
     importSession,
+    exportScenario,
     exportSession,
     selectEntity,
     doAction,
@@ -41,6 +42,7 @@ export function App() {
     setActiveParty,
     splitParty,
     mergeParties,
+    addToParty,
     removeFromParty,
     shareKnowledge,
     setCategoryValue,
@@ -52,8 +54,10 @@ export function App() {
     updateCategoryDef,
     removeCategoryDef,
     addAction,
+    updateAction,
     removeAction,
     addTrigger,
+    updateTrigger,
     removeTrigger,
     resetWorld,
     clearSession,
@@ -109,17 +113,16 @@ export function App() {
     reader.readAsText(file)
   }, [loadScenario, importSession])
 
-  const handleExport = useCallback(() => {
-    const json = exportSession()
+  const downloadJson = useCallback((json: string | null, suffix: string) => {
     if (!json) return
     const blob = new Blob([json], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${session?.scenario.title ?? 'scenario'}.json`
+    a.download = `${session?.scenario.title ?? 'scenario'}-${suffix}.json`
     a.click()
     URL.revokeObjectURL(url)
-  }, [exportSession, session?.scenario.title])
+  }, [session?.scenario.title])
 
   // Landing page
   if (!session) {
@@ -178,7 +181,8 @@ export function App() {
         )}
         <div className="header-actions">
           <button className="btn btn-sm" onClick={undo} disabled={!canUndo}>元に戻す</button>
-          <button className="btn btn-sm" onClick={handleExport}>エクスポート</button>
+          <button className="btn btn-sm" onClick={() => downloadJson(exportScenario(), 'scenario')}>シナリオのみ</button>
+          <button className="btn btn-sm" onClick={() => downloadJson(exportSession(), 'session')}>セッション込み</button>
           <button className="btn btn-sm" onClick={resetWorld}>リセット</button>
           <button className="btn btn-sm btn-danger" onClick={clearSession}>閉じる</button>
         </div>
@@ -192,6 +196,7 @@ export function App() {
           selectedId={selectedEntityId}
           onSelect={handleNavigate}
           onAddEntity={addEntity}
+          onAddToParty={addToParty}
         />
       </div>
 
@@ -222,7 +227,9 @@ export function App() {
               onAddCategoryDef={addCategoryDef}
               onUpdateCategoryDef={updateCategoryDef}
               onRemoveCategoryDef={removeCategoryDef}
+              onUpdateAction={updateAction}
               onRemoveAction={removeAction}
+              onUpdateTrigger={updateTrigger}
               onRemoveTrigger={removeTrigger}
               onFulfill={fulfillPendingClause}
             />
@@ -230,6 +237,7 @@ export function App() {
               scenario={scenario}
               selectedEntityId={selectedEntityId}
               onAddEntity={addEntity}
+              onAddToParty={addToParty}
               onAddAction={addAction}
               onAddTrigger={addTrigger}
               onApplyEffect={applyAdHoc}

@@ -522,6 +522,27 @@ body {
   cursor: pointer;
 }
 
+.category-description-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.category-description-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.category-description-row textarea {
+  min-height: 44px;
+  resize: vertical;
+}
+
 .add-category-form {
   margin-top: 4px;
   padding: 8px 10px;
@@ -659,6 +680,11 @@ body {
 
 .action-card:hover {
   border-color: var(--accent);
+}
+
+.action-card-editing {
+  display: block;
+  align-items: stretch;
 }
 
 .action-info {
@@ -1048,4 +1074,86 @@ body {
   display: flex;
   gap: 6px;
   align-items: center;
+}
+
+/* ===== Shared Editors ===== */
+.entity-template-creator,
+.definition-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.entity-template-creator input,
+.entity-template-creator select,
+.definition-form input,
+.definition-form select,
+.definition-form textarea,
+.effect-builder input,
+.effect-builder select,
+.condition-builder select,
+.category-description-row textarea {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.definition-form textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+
+.definition-form select[multiple] {
+  min-height: 86px;
+}
+
+.entity-template-creator input:focus,
+.entity-template-creator select:focus,
+.definition-form input:focus,
+.definition-form select:focus,
+.definition-form textarea:focus,
+.effect-builder input:focus,
+.effect-builder select:focus,
+.condition-builder select:focus,
+.category-description-row textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.template-type-buttons,
+.effect-builder,
+.condition-builder,
+.roll-editor,
+.editor-actions,
+.editor-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.editor-row {
+  justify-content: space-between;
+  padding: 4px 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.editor-label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.inline-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
 }
