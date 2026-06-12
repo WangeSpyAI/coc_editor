@@ -31,6 +31,11 @@ export function EntityTree({ scenario, worldState, selectedId, onSelect, onAddEn
     [scenario.entities],
   )
 
+  const activePartyLocationId = useMemo(() => {
+    const activeParty = worldState.parties.find((party) => party.id === worldState.activePartyId)
+    return activeParty?.locationId ?? null
+  }, [worldState.activePartyId, worldState.parties])
+
   const toggleCollapse = useCallback((id: string, e: React.MouseEvent) => {
     e.stopPropagation()
     setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -65,6 +70,9 @@ export function EntityTree({ scenario, worldState, selectedId, onSelect, onAddEn
             <span className="tree-toggle" />
           )}
           <span className="tree-node-name">{entity.name}</span>
+          {entityId === activePartyLocationId && (
+            <span className="tree-current-location" title="アクティブパーティの現在地">●</span>
+          )}
           <span className="entity-indicators">
             {entity.triggers.length > 0 && <span className="indicator trigger" title="トリガーあり" />}
             {entity.actions.length > 0 && <span className="indicator action" title="アクションあり" />}

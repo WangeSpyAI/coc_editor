@@ -3,6 +3,7 @@ import './styles.css'
 import { useScenario, type PersistedSession } from '../hooks/useScenario'
 import { EntityTree } from './EntityTree'
 import { EntityPanel } from './EntityPanel'
+import { PartyBar } from './PartyBar'
 import { LiveEditor } from './LiveEditor'
 import { LogPane } from './LogPane'
 import { PendingDropdown, PendingList } from './PendingPanel'
@@ -36,6 +37,12 @@ export function App() {
     exportSession,
     selectEntity,
     doAction,
+    moveParty,
+    setActiveParty,
+    splitParty,
+    mergeParties,
+    removeFromParty,
+    shareKnowledge,
     setCategoryValue,
     applyAdHoc,
     addEntity,
@@ -71,10 +78,8 @@ export function App() {
     [session, getPending],
   )
 
-  const handleAction = useCallback((actionId: string, rollResult?: 'success' | 'failure') => {
-    // 行為者選択は C2 で配線する。'PC' というIDのエンティティは存在しないため
-    // ハードコードせず undefined（行為者なし）で実行する。
-    doAction(actionId, undefined, rollResult)
+  const handleAction = useCallback((actionId: string, actorId?: string, rollResult?: 'success' | 'failure') => {
+    doAction(actionId, actorId, rollResult)
   }, [doAction])
 
   const handleNavigate = useCallback((entityId: string) => {
@@ -192,6 +197,15 @@ export function App() {
 
       {/* Main: Entity Panel */}
       <div className="layout-main">
+        <PartyBar
+          scenario={scenario}
+          worldState={worldState}
+          onSetActiveParty={setActiveParty}
+          onSelectEntity={selectEntity}
+          onSplitParty={splitParty}
+          onMergeParties={mergeParties}
+          onRemoveFromParty={removeFromParty}
+        />
         {selectedEntity ? (
           <>
             <EntityPanel
@@ -200,6 +214,8 @@ export function App() {
               worldState={worldState}
               onAction={handleAction}
               onNavigate={handleNavigate}
+              onMoveParty={moveParty}
+              onShareKnowledge={shareKnowledge}
               onSetCategory={setCategoryValue}
               onUpdateEntity={updateEntity}
               onRemoveEntity={removeEntity}

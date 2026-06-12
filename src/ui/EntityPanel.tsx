@@ -1,6 +1,15 @@
 import { useState, useMemo } from 'react'
 import type { Entity, Category, ReadonlyWorldState, Scenario, Action, ConditionClause } from '../core/types'
-import { buildChildrenMap, getDescendants, getAvailableActions, getPendingTriggers } from '../core/engine'
+import {
+  buildChildrenMap,
+  canEnter,
+  composeSceneDescription,
+  evaluateClause,
+  getDescendants,
+  getAvailableActions,
+  getEligibleActors,
+  getPendingTriggers,
+} from '../core/engine'
 import { StateBadges } from './StateBadges'
 import { PendingList } from './PendingPanel'
 import { describeClause } from './format'
@@ -9,8 +18,10 @@ interface Props {
   entity: Entity
   scenario: Scenario
   worldState: ReadonlyWorldState
-  onAction: (actionId: string, rollResult?: 'success' | 'failure') => void
+  onAction: (actionId: string, actorId?: string, rollResult?: 'success' | 'failure') => void
   onNavigate: (entityId: string) => void
+  onMoveParty: (locationId: string) => void
+  onShareKnowledge: (fromEntityId: string, toEntityId: string, categoryId: string, value: string) => void
   onSetCategory: (entityId: string, categoryId: string, value: string) => void
   onUpdateEntity: (entityId: string, patch: Partial<Pick<Entity, 'name' | 'description' | 'labels' | 'parentId' | 'connections'>>) => void
   onRemoveEntity: (entityId: string) => void
@@ -24,12 +35,13 @@ interface Props {
 
 export function EntityPanel({
   entity, scenario, worldState,
-  onAction, onNavigate, onSetCategory,
+  onAction, onNavigate, onMoveParty, onShareKnowledge, onSetCategory,
   onUpdateEntity, onRemoveEntity,
   onAddCategoryDef, onUpdateCategoryDef, onRemoveCategoryDef,
   onRemoveAction, onRemoveTrigger, onFulfill,
 }: Props) {
   const state = worldState.entityStates[entity.id]
+  const [selectedActors, setSelectedActors] = useState<Record<string, string>>({})
 
   const childrenMap = useMemo(() => buildChildrenMap(worldState.entityStates), [worldState.entityStates])
   const entityMap = useMemo(() => {
@@ -61,8 +73,92 @@ export function EntityPanel({
     [worldState, scenario, entity.id],
   )
 
+  const isLocation = entity.labels.includes('場所')
+  const activeParty = useMemo(
+    () => worldState.parties.find((party) => party.id === worldState.activePartyId) ?? null,
+    [worldState.activePartyId, worldState.parties],
+  )
+  const activePartyLocation = activeParty?.locationId ? entityMap.get(activeParty.locationId) : null
+  const activePartyLocationName = activeParty?.locationId
+    ? activePartyLocation?.name ?? activeParty.locationId
+    : 'ルート'
+
+  const sceneText = useMemo(
+    () => isLocation
+      ? composeSceneDescription(entity.id, worldState, scenario).map((part) => part.text).join('\n\n')
+      : '',
+    [isLocation, entity.id, worldState, scenario],
+  )
+
+  const navigationTargets = useMemo(() => {
+    if (!isLocation) return []
+    const ids = new Set<string>()
+    for (const id of entity.connections) ids.add(id)
+    for (const candidate of scenario.entities) {
+      if (candidate.id !== entity.id && candidate.parentId === entity.parentId) ids.add(candidate.id)
+    }
+    return [...ids]
+      .map((id) => entityMap.get(id))
+      .filter((candidate): candidate is Entity => Boolean(candidate?.labels.includes('場所')))
+      .filter((candidate) => candidate.id !== entity.id)
+  }, [entity.connections, entity.id, entity.parentId, entityMap, isLocation, scenario.entities])
+
+  const shareRows = useMemo(() => {
+    if (!isLocation || !activeParty) return []
+    const pcIds = activeParty.memberIds.filter((memberId) => {
+      const member = entityMap.get(memberId)
+      return member?.labels.includes('PC') && worldState.entityStates[memberId]?.parentId === entity.id
+    })
+    if (pcIds.length < 2) return []
+
+    const rows: { from: Entity; to: Entity; categoryId: string; value: string }[] = []
+    for (const fromId of pcIds) {
+      const from = entityMap.get(fromId)
+      const fromState = worldState.entityStates[fromId]
+      if (!from || !fromState) continue
+      for (const category of from.categories) {
+        if (category.exclusive) continue
+        const rawValue = fromState.categoryValues[category.id]
+        const values = Array.isArray(rawValue) ? rawValue : []
+        for (const value of values) {
+          for (const toId of pcIds) {
+            if (toId === fromId) continue
+            const to = entityMap.get(toId)
+            const toState = worldState.entityStates[toId]
+            if (!to || !toState) continue
+            const targetCategory = to.categories.find((c) => c.name === category.name && !c.exclusive)
+            const targetValue = targetCategory ? toState.categoryValues[targetCategory.id] : undefined
+            const targetValues = Array.isArray(targetValue) ? targetValue : targetValue ? [targetValue] : []
+            if (!targetValues.includes(value)) {
+              rows.push({ from, to, categoryId: category.id, value })
+            }
+          }
+        }
+      }
+    }
+    return rows
+  }, [activeParty, entity.id, entityMap, isLocation, worldState.entityStates])
+
   return (
     <div className="entity-panel">
+      {isLocation && (
+        <>
+          <SceneNavigation
+            entity={entity}
+            scenario={scenario}
+            worldState={worldState}
+            activeParty={activeParty}
+            activePartyLocationName={activePartyLocationName}
+            navigationTargets={navigationTargets}
+            onMove={(locationId) => {
+              onMoveParty(locationId)
+              onNavigate(locationId)
+            }}
+          />
+          <SceneDescription text={sceneText} />
+        </>
+      )}
+
       {/* Header: name + description (editable) */}
       <EditableText
         value={entity.name}
@@ -136,7 +232,7 @@ export function EntityPanel({
       />
 
       {/* Actions */}
-      {descendantActions.length > 0 && (
+      {descendantActions.length > 0 && !isLocation && (
         <Section title="アクション">
           <div className="action-list">
             {descendantActions.map(({ entity: owner, action }) => {
@@ -159,9 +255,9 @@ export function EntityPanel({
                       <button className="action-btn" onClick={() => onAction(action.id)}>実行</button>
                     ) : (
                       <>
-                        <button className="action-btn" onClick={() => onAction(action.id, 'success')}>成功</button>
+                        <button className="action-btn" onClick={() => onAction(action.id, undefined, 'success')}>成功</button>
                         <button className="action-btn" style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
-                          onClick={() => onAction(action.id, 'failure')}>失敗</button>
+                          onClick={() => onAction(action.id, undefined, 'failure')}>失敗</button>
                       </>
                     )}
                     <button className="btn btn-sm btn-danger" onClick={() => onRemoveAction(owner.id, action.id)}
@@ -172,6 +268,23 @@ export function EntityPanel({
             })}
           </div>
         </Section>
+      )}
+
+      {descendantActions.length > 0 && isLocation && (
+        <SceneActions
+          actions={descendantActions}
+          entity={entity}
+          worldState={worldState}
+          scenario={scenario}
+          selectedActors={selectedActors}
+          onSelectActor={(actionId, actorId) => setSelectedActors((prev) => ({ ...prev, [actionId]: actorId }))}
+          onAction={onAction}
+          onRemoveAction={onRemoveAction}
+        />
+      )}
+
+      {shareRows.length > 0 && (
+        <KnowledgeShareSection rows={shareRows} onShare={onShareKnowledge} />
       )}
 
       {/* Triggers */}
@@ -228,6 +341,305 @@ export function EntityPanel({
         </button>
       </div>
     </div>
+  )
+}
+
+function SceneNavigation({
+  entity,
+  scenario,
+  worldState,
+  activeParty,
+  activePartyLocationName,
+  navigationTargets,
+  onMove,
+}: {
+  entity: Entity
+  scenario: Scenario
+  worldState: ReadonlyWorldState
+  activeParty: ReadonlyWorldState['parties'][number] | null
+  activePartyLocationName: string
+  navigationTargets: Entity[]
+  onMove: (locationId: string) => void
+}) {
+  if (!activeParty) {
+    return <div className="scene-nav scene-nav-muted">アクティブパーティがありません</div>
+  }
+
+  if (activeParty.locationId !== entity.id) {
+    const enterable = canEnter(entity.id, worldState, scenario)
+    return (
+      <div className="scene-nav scene-viewing">
+        <span>⚠ パーティは「{activePartyLocationName}」にいます（閲覧中）</span>
+        <button
+          className="btn btn-sm btn-primary"
+          type="button"
+          disabled={!enterable}
+          title={!enterable ? describeUnmetEntryCondition(entity, worldState, scenario) : undefined}
+          onClick={() => onMove(entity.id)}
+        >
+          ここへ移動
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="scene-nav">
+      <span className="scene-nav-label">移動:</span>
+      <div className="scene-nav-buttons">
+        {navigationTargets.map((target) => {
+          const enterable = canEnter(target.id, worldState, scenario)
+          return (
+            <button
+              key={target.id}
+              className="scene-nav-button"
+              type="button"
+              disabled={!enterable}
+              title={!enterable ? describeUnmetEntryCondition(target, worldState, scenario) : undefined}
+              onClick={() => onMove(target.id)}
+            >
+              {!enterable && '🔒 '}
+              {target.name}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function describeUnmetEntryCondition(
+  entity: Entity,
+  worldState: ReadonlyWorldState,
+  scenario: Scenario,
+): string {
+  if (!entity.entryCondition) return ''
+  const childrenMap = buildChildrenMap(worldState.entityStates)
+  return entity.entryCondition.clauses
+    .filter((clause) => !evaluateClause(clause, entity.id, worldState.entityStates, scenario.entities, childrenMap))
+    .map((clause) => describeClause(clause, entity, scenario))
+    .join(' AND ')
+}
+
+function SceneDescription({ text }: { text: string }) {
+  const copy = () => {
+    if (!text || !navigator.clipboard) return
+    navigator.clipboard.writeText(text).catch(() => { /* clipboard unavailable: silent no-op */ })
+  }
+
+  return (
+    <div className="scene-description-block">
+      <div className="scene-description">{text || '描写なし'}</div>
+      <button className="btn btn-sm scene-copy-button" type="button" onClick={copy} disabled={!text}>
+        場面をコピー
+      </button>
+    </div>
+  )
+}
+
+function SceneActions({
+  actions,
+  entity,
+  worldState,
+  scenario,
+  selectedActors,
+  onSelectActor,
+  onAction,
+  onRemoveAction,
+}: {
+  actions: { entity: Entity; action: Action }[]
+  entity: Entity
+  worldState: ReadonlyWorldState
+  scenario: Scenario
+  selectedActors: Readonly<Record<string, string>>
+  onSelectActor: (actionId: string, actorId: string) => void
+  onAction: (actionId: string, actorId?: string, rollResult?: 'success' | 'failure') => void
+  onRemoveAction: (entityId: string, actionId: string) => void
+}) {
+  const playerActions = actions.filter(({ action }) => action.isPlayerAction)
+  const keeperActions = actions.filter(({ action }) => !action.isPlayerAction)
+
+  return (
+    <>
+      {playerActions.length > 0 && (
+        <Section title="PL行動">
+          <div className="action-list">
+            {playerActions.map(({ entity: owner, action }) => (
+              <SceneActionCard
+                key={action.id}
+                owner={owner}
+                currentEntity={entity}
+                action={action}
+                worldState={worldState}
+                scenario={scenario}
+                selectedActorId={selectedActors[action.id]}
+                onSelectActor={(actorId) => onSelectActor(action.id, actorId)}
+                onAction={onAction}
+                onRemoveAction={onRemoveAction}
+              />
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {keeperActions.length > 0 && (
+        <Section title="KP判断">
+          <div className="action-list">
+            {keeperActions.map(({ entity: owner, action }) => (
+              <SceneActionCard
+                key={action.id}
+                owner={owner}
+                currentEntity={entity}
+                action={action}
+                worldState={worldState}
+                scenario={scenario}
+                selectedActorId={undefined}
+                onSelectActor={() => {}}
+                onAction={onAction}
+                onRemoveAction={onRemoveAction}
+              />
+            ))}
+          </div>
+        </Section>
+      )}
+    </>
+  )
+}
+
+function SceneActionCard({
+  owner,
+  currentEntity,
+  action,
+  worldState,
+  scenario,
+  selectedActorId,
+  onSelectActor,
+  onAction,
+  onRemoveAction,
+}: {
+  owner: Entity
+  currentEntity: Entity
+  action: Action
+  worldState: ReadonlyWorldState
+  scenario: Scenario
+  selectedActorId?: string
+  onSelectActor: (actorId: string) => void
+  onAction: (actionId: string, actorId?: string, rollResult?: 'success' | 'failure') => void
+  onRemoveAction: (entityId: string, actionId: string) => void
+}) {
+  const roll = action.rollRequirement
+  const eligibleActors = action.isPlayerAction ? getEligibleActors(action, worldState, scenario) : []
+  const actorId = action.isPlayerAction
+    ? eligibleActors.length === 1
+      ? eligibleActors[0]
+      : selectedActorId || eligibleActors[0] || ''
+    : undefined
+  const actorName = actorId ? scenario.entities.find((candidate) => candidate.id === actorId)?.name ?? actorId : ''
+  const disabled = action.isPlayerAction && eligibleActors.length === 0
+  const disabledTitle = disabled ? '行為者候補がいません' : undefined
+
+  const run = (rollResult?: 'success' | 'failure') => {
+    if (disabled) return
+    onAction(action.id, actorId, rollResult)
+  }
+
+  return (
+    <div className="action-card">
+      <div className="action-info">
+        <div className="action-name">
+          {action.name}
+          {roll && (
+            <span className="scene-roll-badge">
+              [{roll.skill}{roll.difficulty ? ` ${roll.difficulty}` : ''}{roll.opposed ? ' 対抗' : ''}]
+            </span>
+          )}
+        </div>
+        {owner.id !== currentEntity.id && <div className="action-owner">{owner.name}</div>}
+        {action.isPlayerAction && eligibleActors.length === 1 && (
+          <div className="scene-actor-hint">{actorName}</div>
+        )}
+      </div>
+      <div className="scene-action-controls">
+        {action.isPlayerAction && eligibleActors.length > 1 && (
+          <select
+            className="scene-actor-select"
+            value={actorId}
+            onChange={(e) => onSelectActor(e.target.value)}
+          >
+            {eligibleActors.map((id) => {
+              const actor = scenario.entities.find((candidate) => candidate.id === id)
+              return <option key={id} value={id}>{actor?.name ?? id}</option>
+            })}
+          </select>
+        )}
+        {!roll ? (
+          <button
+            className="action-btn scene-action-run"
+            type="button"
+            disabled={disabled}
+            title={disabledTitle}
+            onClick={() => run()}
+          >
+            実行
+          </button>
+        ) : (
+          <>
+            <button
+              className="action-btn scene-action-run"
+              type="button"
+              disabled={disabled}
+              title={disabledTitle}
+              onClick={() => run('success')}
+            >
+              成功
+            </button>
+            <button
+              className="action-btn scene-action-run scene-action-failure"
+              type="button"
+              disabled={disabled}
+              title={disabledTitle}
+              onClick={() => run('failure')}
+            >
+              失敗
+            </button>
+          </>
+        )}
+        <button
+          className="btn btn-sm btn-danger scene-action-remove"
+          type="button"
+          onClick={() => onRemoveAction(owner.id, action.id)}
+        >
+          ×
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function KnowledgeShareSection({
+  rows,
+  onShare,
+}: {
+  rows: { from: Entity; to: Entity; categoryId: string; value: string }[]
+  onShare: (fromEntityId: string, toEntityId: string, categoryId: string, value: string) => void
+}) {
+  return (
+    <Section title="情報共有">
+      <div className="share-list">
+        {rows.map((row) => (
+          <div key={`${row.from.id}-${row.to.id}-${row.categoryId}-${row.value}`} className="share-row">
+            <span>"{row.value}": {row.from.name} → {row.to.name}</span>
+            <button
+              className="btn btn-sm share-button"
+              type="button"
+              onClick={() => onShare(row.from.id, row.to.id, row.categoryId, row.value)}
+            >
+              共有
+            </button>
+          </div>
+        ))}
+      </div>
+    </Section>
   )
 }
 

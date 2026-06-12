@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: 'happy-dom',
+    pool: 'threads',
     exclude: ['e2e/**', 'node_modules/**'],
   },
 })
