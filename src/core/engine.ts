@@ -151,15 +151,34 @@ export function evaluateCondition(
 
 // ===== 効果適用 =====
 
-/** 単一のEffectを適用し、変更があったかを返す */
+/** Effect target 内の $actor 参照を行為者IDに解決する */
+function resolveActorTarget(target: EntityReference, actorId?: string): EntityReference {
+  if (target.type === 'named' && target.entityId === '$actor') {
+    // actorId が無ければ entityId: undefined → resolveReference が対象なしを返す
+    return { ...target, entityId: actorId }
+  }
+  return target
+}
+
+/**
+ * 単一のEffectを適用し、変更があったかを返す。
+ *
+ * actorId はアクション実行時のみ渡される（トリガーには行為者の概念がない）。
+ * Effect 内の $actor を解決する:
+ *   - target が named $actor → 行為者エンティティ（actorId なしなら対象なし）
+ *   - move の newParentId $actor → 行為者ID（アイテムを行為者の手に移す等）
+ *   - setCategory の value $actor → 行為者の名前（表示用途）
+ */
 export function applyEffect(
   effect: Effect,
   selfId: string,
   states: Record<string, EntityState>,
   entities: Entity[],
   childrenMap: Record<string, string[]>,
+  actorId?: string,
 ): boolean {
-  const targetIds = resolveReference(effect.target, selfId, states, childrenMap)
+  const target = resolveActorTarget(effect.target, actorId)
+  const targetIds = resolveReference(target, selfId, states, childrenMap)
   let changed = false
 
   for (const targetId of targetIds) {
@@ -168,6 +187,11 @@ export function applyEffect(
 
     switch (effect.type) {
       case 'setCategory': {
+        // value の $actor は行為者の名前に解決（表示用途。見つからなければIDのまま）
+        const value =
+          effect.value === '$actor' && actorId
+            ? (entities.find((e) => e.id === actorId)?.name ?? actorId)
+            : effect.value
         const current = state.categoryValues[effect.categoryId]
         // エンティティ定義からカテゴリを探す
         const entity = entities.find((e) => e.id === targetId)
@@ -175,15 +199,15 @@ export function applyEffect(
 
         if (category?.exclusive) {
           // 排他: 値を置換
-          if (current !== effect.value) {
-            state.categoryValues[effect.categoryId] = effect.value
+          if (current !== value) {
+            state.categoryValues[effect.categoryId] = value
             changed = true
           }
         } else {
           // 非排他: 値を追加
           const arr = Array.isArray(current) ? current : current ? [current] : []
-          if (!arr.includes(effect.value)) {
-            state.categoryValues[effect.categoryId] = [...arr, effect.value]
+          if (!arr.includes(value)) {
+            state.categoryValues[effect.categoryId] = [...arr, value]
             changed = true
           }
         }
@@ -204,14 +228,17 @@ export function applyEffect(
         break
       }
       case 'move': {
-        if (state.parentId !== effect.newParentId) {
+        // newParentId の $actor は行為者IDに解決（actorId なしでは移動先が定まらない）
+        const newParentId = effect.newParentId === '$actor' ? actorId : effect.newParentId
+        if (newParentId === undefined) break
+        if (state.parentId !== newParentId) {
           // childrenMap を更新
           const oldPid = state.parentId ?? '__root__'
           if (childrenMap[oldPid]) {
             childrenMap[oldPid] = childrenMap[oldPid].filter((id) => id !== targetId)
           }
-          state.parentId = effect.newParentId
-          const newPid = effect.newParentId ?? '__root__'
+          state.parentId = newParentId
+          const newPid = newParentId ?? '__root__'
           if (!childrenMap[newPid]) childrenMap[newPid] = []
           childrenMap[newPid].push(targetId)
           changed = true
@@ -422,18 +449,18 @@ export function applyActionEffects(
     // 失敗: failureEffects のみ
     const failEffects = action.rollRequirement?.failureEffects ?? []
     for (const effect of failEffects) {
-      applyEffect(effect, ownerEntity.id, states, scenario.entities, childrenMap)
+      applyEffect(effect, ownerEntity.id, states, scenario.entities, childrenMap, actorId)
     }
   } else {
     // 成功 or ロールなし: 基本effects適用
     for (const effect of action.effects) {
-      applyEffect(effect, ownerEntity.id, states, scenario.entities, childrenMap)
+      applyEffect(effect, ownerEntity.id, states, scenario.entities, childrenMap, actorId)
     }
     // 成功時追加効果
     if (effectiveRollResult === 'success') {
       const successEffects = action.rollRequirement?.successEffects ?? []
       for (const effect of successEffects) {
-        applyEffect(effect, ownerEntity.id, states, scenario.entities, childrenMap)
+        applyEffect(effect, ownerEntity.id, states, scenario.entities, childrenMap, actorId)
       }
     }
   }

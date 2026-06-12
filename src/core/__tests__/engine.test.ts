@@ -522,6 +522,127 @@ describe('getPendingTriggers', () => {
   })
 })
 
+// ===== $actor 解決テスト =====
+
+describe('$actor のEffect内解決', () => {
+  // 部屋にPC(明)とランタン。アクションの効果が行為者を参照する。
+  const entities: Entity[] = [
+    {
+      id: 'room', name: '部屋', parentId: null, description: '', labels: [], connections: [],
+      categories: [],
+      actions: [
+        {
+          id: 'act-take', name: 'ランタンを取る', entityId: 'room',
+          description: '$actorはランタンを手に取った',
+          isPlayerAction: true,
+          effects: [
+            { type: 'move', target: { type: 'named', entityId: 'lantern' }, newParentId: '$actor' },
+          ],
+          rollRequirement: {
+            skill: '目星',
+            successEffects: [
+              { type: 'setCategory', target: { type: 'named', entityId: 'lantern' }, categoryId: 'holder', value: '$actor' },
+            ],
+            failureEffects: [
+              { type: 'setCategory', target: { type: 'named', entityId: '$actor' }, categoryId: 'sanity', value: '動揺' },
+            ],
+          },
+        },
+      ],
+      triggers: [],
+    },
+    {
+      id: 'pc-akira', name: '明', parentId: 'room', description: '', labels: ['PC'], connections: [],
+      categories: [
+        { id: 'sanity', name: '正気度', exclusive: true, options: ['正常', '動揺'] },
+      ],
+      actions: [], triggers: [],
+    },
+    {
+      id: 'lantern', name: 'ランタン', parentId: 'room', description: '', labels: [], connections: [],
+      categories: [
+        { id: 'holder', name: '所持者', exclusive: true, options: ['なし'] },
+      ],
+      actions: [], triggers: [],
+    },
+  ]
+
+  it('named $actor target が行為者に解決される', () => {
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+    const map = buildChildrenMap(ws.entityStates)
+
+    const changed = applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: '$actor' }, categoryId: 'sanity', value: '動揺' },
+      'room', ws.entityStates, entities, map, 'pc-akira',
+    )
+
+    expect(changed).toBe(true)
+    expect(ws.entityStates['pc-akira'].categoryValues['sanity']).toBe('動揺')
+  })
+
+  it('move の newParentId $actor が行為者に解決される', () => {
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+    const map = buildChildrenMap(ws.entityStates)
+
+    const changed = applyEffect(
+      { type: 'move', target: { type: 'named', entityId: 'lantern' }, newParentId: '$actor' },
+      'room', ws.entityStates, entities, map, 'pc-akira',
+    )
+
+    expect(changed).toBe(true)
+    expect(ws.entityStates['lantern'].parentId).toBe('pc-akira')
+  })
+
+  it('setCategory の value $actor が行為者の名前に解決される', () => {
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+    const map = buildChildrenMap(ws.entityStates)
+
+    applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: 'lantern' }, categoryId: 'holder', value: '$actor' },
+      'room', ws.entityStates, entities, map, 'pc-akira',
+    )
+
+    expect(ws.entityStates['lantern'].categoryValues['holder']).toBe('明')
+  })
+
+  it('actorId なしの $actor target は対象なし（変更なし=false）', () => {
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+    const map = buildChildrenMap(ws.entityStates)
+
+    const changed = applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: '$actor' }, categoryId: 'sanity', value: '動揺' },
+      'room', ws.entityStates, entities, map,
+    )
+
+    expect(changed).toBe(false)
+    expect(ws.entityStates['pc-akira'].categoryValues['sanity']).toBe('正常')
+  })
+
+  it('アクション実行（成功）で effects / successEffects に actorId が渡る', () => {
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+
+    fireAction('act-take', ws, scenario, 'pc-akira', 'success')
+
+    expect(ws.entityStates['lantern'].parentId).toBe('pc-akira')
+    expect(ws.entityStates['lantern'].categoryValues['holder']).toBe('明')
+  })
+
+  it('アクション実行（失敗）で failureEffects に actorId が渡る', () => {
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+
+    fireAction('act-take', ws, scenario, 'pc-akira', 'failure')
+
+    expect(ws.entityStates['lantern'].parentId).toBe('room') // 失敗時は移動しない
+    expect(ws.entityStates['pc-akira'].categoryValues['sanity']).toBe('動揺')
+  })
+})
+
 // ===== 場面合成テスト =====
 
 describe('composeSceneDescription', () => {

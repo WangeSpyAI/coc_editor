@@ -33,8 +33,8 @@ export interface ScenarioSession {
 interface MutationAPI {
   /** 現在の状態を読む（readonly — 書き込み不可） */
   readonly worldState: ReadonlyWorldState
-  /** 単一の Effect を適用する */
-  applyEffect(effect: Effect, selfId: string): boolean
+  /** 単一の Effect を適用する（actorId は Effect 内の $actor 解決用） */
+  applyEffect(effect: Effect, selfId: string, actorId?: string): boolean
   /** アクションの効果を適用する */
   fireAction(actionId: string, actorId?: string, rollResult?: 'success' | 'failure'): boolean
   /** 新しいエンティティの状態を初期化する */
@@ -150,8 +150,8 @@ export function useScenario() {
 
     const api: MutationAPI = {
       get worldState() { return ws as unknown as ReadonlyWorldState },
-      applyEffect(effect, selfId) {
-        return engineApplyEffect(effect, selfId, ws.entityStates, scenario.entities, childrenMap)
+      applyEffect(effect, selfId, actorId) {
+        return engineApplyEffect(effect, selfId, ws.entityStates, scenario.entities, childrenMap, actorId)
       },
       fireAction(actionId, actorId, rollResult) {
         return engineApplyActionEffects(actionId, ws, scenario, actorId, rollResult)
