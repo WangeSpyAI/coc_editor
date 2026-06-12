@@ -311,6 +311,54 @@ export function stabilize(
   return { worldState, firedTriggers, reachedFixedPoint: false }
 }
 
+// ===== 場面合成 =====
+
+/**
+ * エンティティの場面描写を合成する。
+ *
+ * 1. 自身の entity.description が非空なら先頭に置く
+ * 2. 自身 + 子孫を木の深さ優先順（親→子）で走査し、各エンティティの
+ *    カテゴリ定義順に、現在値（排他=単値、非排他=各値）が
+ *    Category.descriptions に描写を持てば追加する
+ *
+ * 描写を持たない値は出力しない — 未発見アイテム等は自然に不可視になる。
+ */
+export function composeSceneDescription(
+  entityId: string,
+  worldState: ReadonlyWorldState,
+  scenario: Scenario,
+): { entityId: string; text: string }[] {
+  const states = worldState.entityStates
+  const childrenMap = buildChildrenMap(states)
+  const result: { entityId: string; text: string }[] = []
+
+  const self = scenario.entities.find((e) => e.id === entityId)
+  if (self && self.description) {
+    result.push({ entityId, text: self.description })
+  }
+
+  const visit = (id: string) => {
+    const entity = scenario.entities.find((e) => e.id === id)
+    const state = states[id]
+    if (entity && state) {
+      for (const cat of entity.categories) {
+        if (!cat.descriptions) continue
+        const val = state.categoryValues[cat.id]
+        if (val === undefined) continue
+        const values = typeof val === 'string' ? [val] : val
+        for (const v of values) {
+          const text = cat.descriptions[v]
+          if (text) result.push({ entityId: id, text })
+        }
+      }
+    }
+    for (const childId of childrenMap[id] ?? []) visit(childId)
+  }
+  visit(entityId)
+
+  return result
+}
+
 // ===== アクション実行 =====
 
 /** アクションの表示条件を評価し、利用可能なアクションを返す */

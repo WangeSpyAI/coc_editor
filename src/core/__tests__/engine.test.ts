@@ -18,6 +18,7 @@ import {
   getDescendants,
   getSiblings,
   applyEffect,
+  composeSceneDescription,
 } from '../engine'
 
 // ===== テスト用ヘルパー =====
@@ -518,5 +519,108 @@ describe('getPendingTriggers', () => {
     expect(pending.length).toBe(1)
     expect(pending[0].trigger.id).toBe('trg-escape')
     expect(pending[0].unmetClauses[0].value).toBe('解錠')
+  })
+})
+
+// ===== 場面合成テスト =====
+
+describe('composeSceneDescription', () => {
+  // 書斎 > 机 > 日記 の3階層。
+  // light=明るい には描写なし（描写を持つ値だけが場面に現れることを確認するため）。
+  const entities: Entity[] = [
+    {
+      id: 'study', name: '書斎', parentId: null, description: '埃っぽい書斎。本棚が壁を覆っている。', labels: [], connections: [],
+      categories: [
+        {
+          id: 'light', name: '照明', exclusive: true, options: ['明るい', '暗い'],
+          descriptions: { '暗い': '部屋は闇に沈んでいる。' },
+        },
+      ],
+      actions: [], triggers: [],
+    },
+    {
+      id: 'desk', name: '机', parentId: 'study', description: '', labels: [], connections: [],
+      categories: [
+        {
+          id: 'drawer', name: '引き出し', exclusive: true, options: ['閉', '開'],
+          descriptions: { '閉': '机の引き出しは閉まっている。', '開': '引き出しが開いている。' },
+        },
+      ],
+      actions: [], triggers: [],
+    },
+    {
+      id: 'diary', name: '日記', parentId: 'desk', description: '', labels: [], connections: [],
+      categories: [
+        {
+          id: 'found', name: '発見状況', exclusive: false, options: ['発見済', '解読済'],
+          descriptions: { '発見済': '古い日記が見つかっている。', '解読済': '日記の内容は解読済みだ。' },
+        },
+      ],
+      actions: [], triggers: [],
+    },
+  ]
+
+  it('自身のdescriptionが先頭、描写を持つカテゴリ値だけが出力される', () => {
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+    // 初期状態: light=明るい(描写なし), drawer=閉(描写あり), found=[](値なし)
+
+    const parts = composeSceneDescription('study', ws, scenario)
+    expect(parts).toEqual([
+      { entityId: 'study', text: '埃っぽい書斎。本棚が壁を覆っている。' },
+      { entityId: 'desk', text: '机の引き出しは閉まっている。' },
+    ])
+  })
+
+  it('描写を持つ値に変化すると場面に現れる', () => {
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+    const map = buildChildrenMap(ws.entityStates)
+    applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: 'study' }, categoryId: 'light', value: '暗い' },
+      'study', ws.entityStates, entities, map,
+    )
+
+    const parts = composeSceneDescription('study', ws, scenario)
+    expect(parts).toEqual([
+      { entityId: 'study', text: '埃っぽい書斎。本棚が壁を覆っている。' },
+      { entityId: 'study', text: '部屋は闇に沈んでいる。' },
+      { entityId: 'desk', text: '机の引き出しは閉まっている。' },
+    ])
+  })
+
+  it('非排他カテゴリは保持する各値の描写を出力し、親→子の順に並ぶ', () => {
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+    const map = buildChildrenMap(ws.entityStates)
+    applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: 'diary' }, categoryId: 'found', value: '発見済' },
+      'diary', ws.entityStates, entities, map,
+    )
+    applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: 'diary' }, categoryId: 'found', value: '解読済' },
+      'diary', ws.entityStates, entities, map,
+    )
+
+    const parts = composeSceneDescription('study', ws, scenario)
+    expect(parts).toEqual([
+      { entityId: 'study', text: '埃っぽい書斎。本棚が壁を覆っている。' },
+      { entityId: 'desk', text: '机の引き出しは閉まっている。' },
+      { entityId: 'diary', text: '古い日記が見つかっている。' },
+      { entityId: 'diary', text: '日記の内容は解読済みだ。' },
+    ])
+  })
+
+  it('ワールド状態が欠落しているエンティティがあっても安全に動作する', () => {
+    // スキーマには diary があるが、ワールド状態には無い（ライブ編集中の不整合を再現）
+    const partialScenario = makeScenario(entities.filter((e) => e.id !== 'diary'))
+    const ws = initializeWorldState(partialScenario)
+    const fullScenario = makeScenario(entities)
+
+    const parts = composeSceneDescription('study', ws, fullScenario)
+    expect(parts).toEqual([
+      { entityId: 'study', text: '埃っぽい書斎。本棚が壁を覆っている。' },
+      { entityId: 'desk', text: '机の引き出しは閉まっている。' },
+    ])
   })
 })

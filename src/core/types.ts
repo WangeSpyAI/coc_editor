@@ -30,6 +30,7 @@ export interface Category {
   name: string
   exclusive: boolean // true = 排他（値は1つ）, false = 非排他（複数可）
   options: string[] // 取りうる値のリスト
+  descriptions?: Record<string, string> // 選択肢値 → 場面描写テキスト（描写なしの値は場面に現れない）
 }
 
 // エンティティ実行時の状態
