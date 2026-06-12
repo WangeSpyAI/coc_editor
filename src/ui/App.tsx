@@ -5,6 +5,7 @@ import { EntityTree } from './EntityTree'
 import { EntityPanel } from './EntityPanel'
 import { LiveEditor } from './LiveEditor'
 import { LogPane } from './LogPane'
+import { PendingDropdown, PendingList } from './PendingPanel'
 import { sampleScenario } from '../core/sampleScenario'
 import type { Entity, Scenario } from '../core/types'
 
@@ -50,6 +51,7 @@ export function App() {
     resetWorld,
     clearSession,
     getPending,
+    fulfillPendingClause,
   } = useScenario()
 
   const entityMap = useMemo(() => {
@@ -154,9 +156,18 @@ export function App() {
       <header className="app-header">
         <h1>Scenario Editor</h1>
         <span className="scenario-title">{scenario.title}</span>
-        {pendingTriggers.length > 0 && (
-          <span style={{ color: 'var(--warning)', fontSize: 12 }}>
-            待機中: {pendingTriggers.length}
+        <PendingDropdown
+          pending={pendingTriggers}
+          scenario={scenario}
+          onSelectEntity={handleNavigate}
+          onFulfill={fulfillPendingClause}
+        />
+        {session.lastResult && !session.lastResult.reachedFixedPoint && (
+          <span
+            className="oscillation-badge"
+            title="トリガーが上限ステップまで停止しませんでした。トリガーの循環を確認してください"
+          >
+            ⚠ 振動の可能性
           </span>
         )}
         <div className="header-actions">
@@ -212,12 +223,12 @@ export function App() {
             {pendingTriggers.length > 0 && (
               <div className="pending-section" style={{ width: '100%' }}>
                 <div className="entity-section"><h3>待機中トリガー（あと1条件）</h3></div>
-                {pendingTriggers.map(({ trigger, entity }) => (
-                  <div key={trigger.id} className="pending-trigger" style={{ cursor: 'pointer' }} onClick={() => handleNavigate(entity.id)}>
-                    <div className="trigger-name">{trigger.name}</div>
-                    <div className="unmet" style={{ fontSize: 11 }}>{entity.name}</div>
-                  </div>
-                ))}
+                <PendingList
+                  pending={pendingTriggers}
+                  scenario={scenario}
+                  onSelectEntity={handleNavigate}
+                  onFulfill={fulfillPendingClause}
+                />
               </div>
             )}
           </div>
