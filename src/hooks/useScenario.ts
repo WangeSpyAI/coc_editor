@@ -57,9 +57,11 @@ function loadSession(): ScenarioSession | null {
       if (!e.connections) e.connections = []
     }
     // Migrate: 古いデータに parties / activePartyId がない場合は
-    // initializeWorldState と同じロジック（createDefaultParties）で補完
+    // initializeWorldState と同じロジック（createDefaultParties）で補完。
+    // 位置はシナリオ定義ではなく保存済みの実状態（entityStates）から導出する —
+    // プレイ中に move したPCの位置が初期位置に巻き戻らないように。
     if (!data.worldState.parties) {
-      const defaults = createDefaultParties(data.scenario)
+      const defaults = createDefaultParties(data.scenario, data.worldState.entityStates)
       data.worldState.parties = defaults.parties
       data.worldState.activePartyId = defaults.activePartyId
     }

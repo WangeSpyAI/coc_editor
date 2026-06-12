@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest'
 import type { Action, Entity, Scenario } from '../types'
 import {
   initializeWorldState,
+  createDefaultParties,
   stabilize,
   fireAction,
   getAvailableActions,
@@ -939,6 +940,52 @@ describe('パーティ初期化', () => {
 
     expect(ws.parties).toEqual([])
     expect(ws.activePartyId).toBe(null)
+  })
+})
+
+// ===== createDefaultParties（entityStates からの位置導出）テスト =====
+// loadSession のマイグレーションは「プレイ中の実状態」を渡す。
+// シナリオ定義の parentId（執筆時の初期位置）ではなく、
+// move 効果で更新された entityStates の parentId が使われることを検証する。
+
+describe('createDefaultParties（entityStates からの位置導出）', () => {
+  const baseEntities = (): Entity[] => [
+    { id: 'room-a', name: '部屋A', parentId: null, description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+    { id: 'room-b', name: '部屋B', parentId: null, description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+    { id: 'pc-akira', name: '明', parentId: 'room-a', description: '', labels: ['PC'], connections: [], categories: [], actions: [], triggers: [] },
+  ]
+
+  it('PCがプレイ中に移動していたら locationId は entityStates の親になる', () => {
+    const scenario = makeScenario(baseEntities())
+    const ws = initializeWorldState(scenario)
+    applyEffect(
+      { type: 'move', target: { type: 'named', entityId: 'pc-akira' }, newParentId: 'room-b' },
+      'pc-akira',
+      ws.entityStates,
+      scenario.entities,
+      buildChildrenMap(ws.entityStates),
+    )
+
+    const defaults = createDefaultParties(scenario, ws.entityStates)
+    expect(defaults.parties[0].locationId).toBe('room-b')
+  })
+
+  it('PCがルート直下にいる実状態なら locationId は null（シナリオの初期位置に戻さない）', () => {
+    // MoveEffect の newParentId は string でルート移動を表現できないため、
+    // 「PCがルートにいる世界状態」を別シナリオの初期化で構築し、
+    // 元シナリオ（PC は room-a 所属）の定義と突き合わせる。
+    const liveEntities = baseEntities().map((e) =>
+      e.id === 'pc-akira' ? { ...e, parentId: null } : e,
+    )
+    const liveWs = initializeWorldState(makeScenario(liveEntities))
+
+    const defaults = createDefaultParties(makeScenario(baseEntities()), liveWs.entityStates)
+    expect(defaults.parties[0].locationId).toBe(null)
+  })
+
+  it('entityStates に先頭PCの記録がなければシナリオの parentId にフォールバックする', () => {
+    const defaults = createDefaultParties(makeScenario(baseEntities()), {})
+    expect(defaults.parties[0].locationId).toBe('room-a')
   })
 })
 

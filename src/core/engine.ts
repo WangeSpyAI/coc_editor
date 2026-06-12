@@ -600,22 +600,33 @@ export function fireAction(
 /**
  * シナリオからデフォルトパーティを導出する。
  * ラベル 'PC' を持つ全エンティティで「パーティ」を1つ作る（決定的ID）。
- * locationId は先頭PCの parentId（null = ルート直下）。PCがいなければパーティなし。
+ * PCがいなければパーティなし。
+ *
+ * locationId は先頭PCの「実状態」（entityStates）の parentId。
+ * プレイ中の move 効果は entityStates にしか反映されないため、
+ * シナリオ定義の parentId（執筆時の初期位置）を使うとプレイ途中の
+ * セッションで位置が巻き戻る。entityStates に記録がないPC
+ * （シナリオ編集で後から追加された等）のみシナリオ定義に戻す。
+ * ?? でなく三項分岐なのは意図的 — ルート直下のPCは実状態の
+ * parentId が null であり、?? だと古い初期位置に誤って戻るため。
  *
  * initializeWorldState と loadSession の旧データ補完が両方この関数を通る —
  * 新規作成とマイグレーションでパーティ構成が乖離する道がない。
  */
 export function createDefaultParties(
   scenario: Scenario,
+  entityStates: ReadonlyStates,
 ): Pick<WorldState, 'parties' | 'activePartyId'> {
   const pcs = scenario.entities.filter((e) => e.labels.includes('PC'))
   if (pcs.length === 0) return { parties: [], activePartyId: null }
 
+  const firstPc = pcs[0]
+  const st = entityStates[firstPc.id]
   const party: Party = {
     id: 'party-default',
     name: 'パーティ',
     memberIds: pcs.map((e) => e.id),
-    locationId: pcs[0].parentId,
+    locationId: st ? st.parentId : firstPc.parentId,
   }
   return { parties: [party], activePartyId: party.id }
 }
@@ -648,7 +659,7 @@ export function initializeWorldState(scenario: Scenario): WorldState {
     firedTriggerIds: new Set(),
     log: [],
     step: 0,
-    ...createDefaultParties(scenario),
+    ...createDefaultParties(scenario, entityStates),
   }
 }
 
