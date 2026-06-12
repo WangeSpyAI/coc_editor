@@ -17,6 +17,8 @@ import type {
   Effect,
   Trigger,
   Action,
+  LogEntry,
+  ScenePart,
 } from './types'
 
 import type { ReadonlyEntityState } from './types'
@@ -27,6 +29,20 @@ import type { ReadonlyEntityState } from './types'
 type ReadonlyStates = Readonly<Record<string, ReadonlyEntityState>>
 
 const MAX_STABILIZE_STEPS = 100
+
+// ===== ログ =====
+
+/**
+ * ログエントリを追加する。
+ * timestamp（step）と at（実時刻）はここで自動付与する —
+ * 個別のログ追加サイトが付け忘れる道を構造的に塞ぐ。
+ */
+export function pushLog(
+  worldState: WorldState,
+  entry: Omit<LogEntry, 'timestamp' | 'at'>,
+): void {
+  worldState.log.push({ ...entry, timestamp: worldState.step, at: Date.now() })
+}
 
 // ===== ツリー操作 =====
 
@@ -161,13 +177,23 @@ function resolveActorTarget(target: EntityReference, actorId?: string): EntityRe
 }
 
 /**
+ * 行為者IDを表示用の名前に解決する（見つからなければIDのまま）。
+ * カテゴリ値の $actor 解決とアクションログの $actor 解決の両方がここを通る —
+ * 片方だけIDを露出するような乖離が起きない。
+ */
+function resolveActorName(entities: readonly Entity[], actorId: string): string {
+  return entities.find((e) => e.id === actorId)?.name ?? actorId
+}
+
+/**
  * 単一のEffectを適用し、変更があったかを返す。
  *
  * actorId はアクション実行時のみ渡される（トリガーには行為者の概念がない）。
  * Effect 内の $actor を解決する:
  *   - target が named $actor → 行為者エンティティ（actorId なしなら対象なし）
  *   - move の newParentId $actor → 行為者ID（アイテムを行為者の手に移す等）
- *   - setCategory の value $actor → 行為者の名前（表示用途）
+ *   - setCategory / removeCategory の value $actor → 行為者の名前（表示用途。
+ *     両方で同じ解決をするので、setCategory が付与した値を removeCategory で除去できる）
  */
 export function applyEffect(
   effect: Effect,
@@ -181,17 +207,21 @@ export function applyEffect(
   const targetIds = resolveReference(target, selfId, states, childrenMap)
   let changed = false
 
+  // value の $actor は行為者の名前に解決（targetId に依存しないのでループ外で一度だけ）
+  let resolvedValue = ''
+  if (effect.type === 'setCategory' || effect.type === 'removeCategory') {
+    resolvedValue =
+      effect.value === '$actor' && actorId
+        ? resolveActorName(entities, actorId)
+        : effect.value
+  }
+
   for (const targetId of targetIds) {
     const state = states[targetId]
     if (!state) continue
 
     switch (effect.type) {
       case 'setCategory': {
-        // value の $actor は行為者の名前に解決（表示用途。見つからなければIDのまま）
-        const value =
-          effect.value === '$actor' && actorId
-            ? (entities.find((e) => e.id === actorId)?.name ?? actorId)
-            : effect.value
         const current = state.categoryValues[effect.categoryId]
         // エンティティ定義からカテゴリを探す
         const entity = entities.find((e) => e.id === targetId)
@@ -199,15 +229,15 @@ export function applyEffect(
 
         if (category?.exclusive) {
           // 排他: 値を置換
-          if (current !== value) {
-            state.categoryValues[effect.categoryId] = value
+          if (current !== resolvedValue) {
+            state.categoryValues[effect.categoryId] = resolvedValue
             changed = true
           }
         } else {
           // 非排他: 値を追加
           const arr = Array.isArray(current) ? current : current ? [current] : []
-          if (!arr.includes(value)) {
-            state.categoryValues[effect.categoryId] = [...arr, value]
+          if (!arr.includes(resolvedValue)) {
+            state.categoryValues[effect.categoryId] = [...arr, resolvedValue]
             changed = true
           }
         }
@@ -216,12 +246,12 @@ export function applyEffect(
       case 'removeCategory': {
         const current = state.categoryValues[effect.categoryId]
         if (Array.isArray(current)) {
-          const idx = current.indexOf(effect.value)
+          const idx = current.indexOf(resolvedValue)
           if (idx !== -1) {
-            state.categoryValues[effect.categoryId] = current.filter((v) => v !== effect.value)
+            state.categoryValues[effect.categoryId] = current.filter((v) => v !== resolvedValue)
             changed = true
           }
-        } else if (current === effect.value) {
+        } else if (current === resolvedValue) {
           state.categoryValues[effect.categoryId] = ''
           changed = true
         }
@@ -277,7 +307,7 @@ export function stabilize(
   scenario: Scenario,
 ): StabilizeResult {
   const states = worldState.entityStates
-  let childrenMap = buildChildrenMap(states)
+  const childrenMap = buildChildrenMap(states)
   const firedTriggers: StabilizeResult['firedTriggers'] = []
   let step = worldState.step
 
@@ -314,10 +344,8 @@ export function stabilize(
             anyChanged = true
             firedTriggers.push({ triggerId: trigger.id, entityId: entity.id, step })
 
-            // ログ
-            worldState.log.push({
-              timestamp: step,
-              at: Date.now(),
+            // ログ（この時点では worldState.step === step）
+            pushLog(worldState, {
               type: 'trigger',
               sourceEntityId: entity.id,
               description: `トリガー「${trigger.name}」が発火`,
@@ -374,18 +402,19 @@ export function composeSceneDescription(
   entityId: string,
   worldState: ReadonlyWorldState,
   scenario: Scenario,
-): { entityId: string; text: string }[] {
+): ScenePart[] {
   const states = worldState.entityStates
   const childrenMap = buildChildrenMap(states)
-  const result: { entityId: string; text: string }[] = []
+  const entityMap = new Map(scenario.entities.map((e) => [e.id, e]))
+  const result: ScenePart[] = []
 
-  const self = scenario.entities.find((e) => e.id === entityId)
+  const self = entityMap.get(entityId)
   if (self && self.description) {
     result.push({ entityId, text: self.description })
   }
 
   const visit = (id: string) => {
-    const entity = scenario.entities.find((e) => e.id === id)
+    const entity = entityMap.get(id)
     const state = states[id]
     if (entity && state) {
       for (const cat of entity.categories) {
@@ -485,16 +514,14 @@ export function applyActionEffects(
     }
   }
 
-  // ログ
+  // ログ（$actor は行為者の名前に解決 — KPに見せるテキストにIDを出さない）
   const desc = actorId
-    ? action.description.replace(/\$actor/g, actorId)
+    ? action.description.replace(/\$actor/g, resolveActorName(scenario.entities, actorId))
     : action.description
   const rollSuffix = effectiveRollResult
     ? effectiveRollResult === 'success' ? '（成功）' : '（失敗）'
     : ''
-  worldState.log.push({
-    timestamp: worldState.step,
-    at: Date.now(),
+  pushLog(worldState, {
     type: 'action',
     sourceEntityId: ownerEntity.id,
     description: desc + rollSuffix,

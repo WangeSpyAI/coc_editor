@@ -7,6 +7,7 @@ import {
   applyEffect as engineApplyEffect,
   getPendingTriggers,
   buildChildrenMap,
+  pushLog,
   type StabilizeResult,
 } from '../core/engine'
 
@@ -160,7 +161,7 @@ export function useScenario() {
         ws.entityStates[entityId] = { entityId, parentId, categoryValues }
       },
       log(type, sourceEntityId, description, actorId) {
-        ws.log.push({ timestamp: ws.step, at: Date.now(), type, sourceEntityId, description, actorId })
+        pushLog(ws, { type, sourceEntityId, description, actorId })
       },
     }
 

@@ -175,6 +175,12 @@ export type ReadonlyWorldState = {
   readonly step: number
 }
 
+/** 場面描写の1要素。composeSceneDescription が返す（出典エンティティ + 描写テキスト） */
+export interface ScenePart {
+  entityId: string
+  text: string
+}
+
 export interface LogEntry {
   timestamp: number // step number
   at?: number // 実時刻 (epoch ms)。旧データには無い

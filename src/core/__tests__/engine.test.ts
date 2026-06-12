@@ -642,6 +642,36 @@ describe('$actor のEffect内解決', () => {
     expect(ws.entityStates['lantern'].parentId).toBe('room') // 失敗時は移動しない
     expect(ws.entityStates['pc-akira'].categoryValues['sanity']).toBe('動揺')
   })
+
+  it('removeCategory の value $actor も行為者の名前に解決される（setCategoryで付与した値を除去できる）', () => {
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+    const map = buildChildrenMap(ws.entityStates)
+
+    applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: 'lantern' }, categoryId: 'holder', value: '$actor' },
+      'room', ws.entityStates, entities, map, 'pc-akira',
+    )
+    expect(ws.entityStates['lantern'].categoryValues['holder']).toBe('明')
+
+    const changed = applyEffect(
+      { type: 'removeCategory', target: { type: 'named', entityId: 'lantern' }, categoryId: 'holder', value: '$actor' },
+      'room', ws.entityStates, entities, map, 'pc-akira',
+    )
+    expect(changed).toBe(true)
+    expect(ws.entityStates['lantern'].categoryValues['holder']).toBe('')
+  })
+
+  it('アクションログの $actor は行為者の名前に解決される（IDではない）', () => {
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+
+    fireAction('act-take', ws, scenario, 'pc-akira', 'success')
+
+    const actionLog = ws.log.find((l) => l.type === 'action')
+    expect(actionLog?.description).toContain('明はランタンを手に取った')
+    expect(actionLog?.description).not.toContain('pc-akira')
+  })
 })
 
 // ===== ログ実時刻テスト =====
