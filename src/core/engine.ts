@@ -338,6 +338,25 @@ export function stabilize(
   return { worldState, firedTriggers, reachedFixedPoint: false }
 }
 
+// ===== 進入条件 =====
+
+/**
+ * 場所への進入可否を判定する。
+ * entryCondition がなければ常に進入可。あれば対象場所を selfId として評価する。
+ */
+export function canEnter(
+  entityId: string,
+  worldState: ReadonlyWorldState,
+  scenario: Scenario,
+): boolean {
+  const entity = scenario.entities.find((e) => e.id === entityId)
+  if (!entity?.entryCondition) return true
+
+  const states = worldState.entityStates
+  const childrenMap = buildChildrenMap(states)
+  return evaluateCondition(entity.entryCondition, entityId, states, scenario.entities, childrenMap)
+}
+
 // ===== 場面合成 =====
 
 /**

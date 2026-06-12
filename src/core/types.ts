@@ -21,6 +21,7 @@ export interface Entity {
   categories: Category[]
   actions: Action[]
   triggers: Trigger[]
+  entryCondition?: TriggerCondition // 場所への進入条件（なし = 常に進入可）
 }
 
 // ===== カテゴリ（状態軸） =====

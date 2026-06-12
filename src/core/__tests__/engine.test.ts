@@ -19,6 +19,7 @@ import {
   getSiblings,
   applyEffect,
   composeSceneDescription,
+  canEnter,
 } from '../engine'
 
 // ===== テスト用ヘルパー =====
@@ -640,6 +641,79 @@ describe('$actor のEffect内解決', () => {
 
     expect(ws.entityStates['lantern'].parentId).toBe('room') // 失敗時は移動しない
     expect(ws.entityStates['pc-akira'].categoryValues['sanity']).toBe('動揺')
+  })
+})
+
+// ===== 進入条件テスト =====
+
+describe('canEnter（場所の進入条件）', () => {
+  // 地下室は「扉が解錠」のときだけ入れる
+  const entities: Entity[] = [
+    {
+      id: 'hall', name: '廊下', parentId: null, description: '', labels: [], connections: [],
+      categories: [], actions: [], triggers: [],
+    },
+    {
+      id: 'basement', name: '地下室', parentId: null, description: '', labels: [], connections: [],
+      categories: [
+        { id: 'door', name: '扉', exclusive: true, options: ['施錠', '解錠'] },
+      ],
+      actions: [], triggers: [],
+      entryCondition: {
+        clauses: [{ reference: { type: 'self' }, categoryId: 'door', value: '解錠' }],
+      },
+    },
+  ]
+
+  it('進入条件なしの場所には常に入れる', () => {
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+
+    expect(canEnter('hall', ws, scenario)).toBe(true)
+  })
+
+  it('進入条件が充足していれば入れる', () => {
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+    const map = buildChildrenMap(ws.entityStates)
+    applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: 'basement' }, categoryId: 'door', value: '解錠' },
+      'basement', ws.entityStates, entities, map,
+    )
+
+    expect(canEnter('basement', ws, scenario)).toBe(true)
+  })
+
+  it('進入条件が未充足なら入れない', () => {
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+    // 初期状態: door=施錠
+
+    expect(canEnter('basement', ws, scenario)).toBe(false)
+  })
+
+  it('negate 条件を評価できる', () => {
+    // 「施錠でない」ことが進入条件
+    const negEntities: Entity[] = [
+      {
+        ...entities[1],
+        id: 'vault', name: '金庫室',
+        entryCondition: {
+          clauses: [{ reference: { type: 'self' }, categoryId: 'door', value: '施錠', negate: true }],
+        },
+      },
+    ]
+    const scenario = makeScenario(negEntities)
+    const ws = initializeWorldState(scenario)
+    // 初期状態: door=施錠 → negate なので false
+    expect(canEnter('vault', ws, scenario)).toBe(false)
+
+    const map = buildChildrenMap(ws.entityStates)
+    applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: 'vault' }, categoryId: 'door', value: '解錠' },
+      'vault', ws.entityStates, negEntities, map,
+    )
+    expect(canEnter('vault', ws, scenario)).toBe(true)
   })
 })
 
