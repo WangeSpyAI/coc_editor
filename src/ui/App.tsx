@@ -7,6 +7,21 @@ import { LiveEditor } from './LiveEditor'
 import { sampleScenario } from '../core/sampleScenario'
 import type { Entity, Scenario } from '../core/types'
 
+/**
+ * セッションエクスポート形式の最小形状チェック。
+ * scenario.entities が配列・worldState.entityStates がオブジェクトであることだけ確認する —
+ * importSession に「キーはあるが中身が別物」の JSON を渡してクラッシュさせないため。
+ * 不一致なら素のシナリオ形式の判定へフォールスルーする。
+ */
+function isPersistedSessionShape(parsed: Record<string, unknown>): boolean {
+  const scenario = parsed.scenario as { entities?: unknown } | null | undefined
+  const worldState = parsed.worldState as { entityStates?: unknown } | null | undefined
+  return Boolean(
+    scenario && Array.isArray(scenario.entities)
+    && worldState && typeof worldState.entityStates === 'object' && worldState.entityStates !== null,
+  )
+}
+
 export function App() {
   const {
     session,
@@ -73,14 +88,15 @@ export function App() {
     reader.onload = () => {
       try {
         const parsed = JSON.parse(reader.result as string) as Record<string, unknown>
-        if (parsed.scenario && parsed.worldState) {
+        if (isPersistedSessionShape(parsed)) {
           // セッションエクスポート形式 → 進行状態ごと復元
           importSession(parsed as unknown as PersistedSession)
         } else if (parsed.entities && parsed.title) {
           // 素のシナリオ形式 → 初期状態で開始
           loadScenario(parsed as unknown as Scenario)
         }
-      } catch { /* invalid JSON */ }
+        // どちらの形でもないファイルは何もしない（従来どおり silent no-op）
+      } catch { /* invalid JSON / 未対応の保存形式 */ }
     }
     reader.readAsText(file)
   }, [loadScenario, importSession])

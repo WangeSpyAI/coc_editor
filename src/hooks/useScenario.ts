@@ -2,8 +2,8 @@ import { useState, useCallback, useRef } from 'react'
 import type { Scenario, WorldState, ReadonlyWorldState, ReadonlyParty, Entity, Action, Effect, Trigger, LogEntry, Category, ConditionClause } from '../core/types'
 import {
   initializeWorldState,
-  createDefaultParties,
   stabilize,
+  reconcileWorldWithScenario,
   applyActionEffects as engineApplyActionEffects,
   applyEffect as engineApplyEffect,
   getPendingTriggers,
@@ -12,22 +12,20 @@ import {
   canEnter,
   composeSceneDescription,
   resolveReference,
-  type StabilizeResult,
 } from '../core/engine'
+import {
+  serializeSession,
+  reviveSession,
+  type ScenarioSession,
+  type PersistedSession,
+} from '../core/persistence'
+
+// 永続化（serialize / revive）は src/core/persistence.ts に分離 —
+// 純粋関数なので単体テスト可能。型は既存利用箇所のためここから再公開する。
+export type { ScenarioSession, PersistedSession }
 
 const STORAGE_KEY = 'scenario_editor_data'
 const MAX_UNDO_HISTORY = 50
-
-/**
- * 外部公開用セッション型。
- * worldState は ReadonlyWorldState — コンポーネントは読み取り専用。
- * 状態変更は useScenario のコールバック（doAction, setCategoryValue等）経由のみ。
- */
-export interface ScenarioSession {
-  scenario: Scenario
-  worldState: ReadonlyWorldState
-  lastResult: StabilizeResult | null
-}
 
 /**
  * mutateAndStabilize コールバックが受け取る制限付きAPI。
@@ -55,59 +53,6 @@ interface MutationAPI {
 }
 
 
-/**
- * セッションの永続化形式。localStorage 保存とファイルエクスポートの両方がこの形 —
- * シリアライザが1つなので「保存はできるが読み込めない」形式乖離が起きない。
- *
- * - firedTriggerIds は JSON 化のため配列
- * - lastResult は含めない（一時的な stabilize レポートでありセッション状態ではない。
- *   永続化するとマイグレーション漏れの温床になる）
- * - 旧データは formatVersion / parties を持たないことがある（revive で補完）
- */
-export interface PersistedSession {
-  formatVersion?: 1
-  scenario: Scenario
-  worldState: Omit<WorldState, 'firedTriggerIds' | 'parties' | 'activePartyId'> &
-    Partial<Pick<WorldState, 'parties' | 'activePartyId'>> & { firedTriggerIds: string[] }
-}
-
-function serializeSession(session: ScenarioSession): PersistedSession {
-  return {
-    formatVersion: 1,
-    scenario: session.scenario,
-    worldState: {
-      ...session.worldState,
-      firedTriggerIds: [...session.worldState.firedTriggerIds],
-    } as PersistedSession['worldState'],
-  }
-}
-
-/** 永続化形式から ScenarioSession を復元する（localStorage / インポートファイル共通） */
-function reviveSession(data: PersistedSession): ScenarioSession {
-  const scenario = data.scenario
-  // Migrate: 古いデータに connections がない場合は補完
-  for (const e of scenario.entities) {
-    if (!e.connections) e.connections = []
-  }
-  const worldState: WorldState = {
-    ...data.worldState,
-    firedTriggerIds: new Set(data.worldState.firedTriggerIds),
-    parties: data.worldState.parties ?? [],
-    activePartyId: data.worldState.activePartyId ?? null,
-  }
-  // Migrate: 古いデータに parties / activePartyId がない場合は
-  // initializeWorldState と同じロジック（createDefaultParties）で補完。
-  // 位置はシナリオ定義ではなく保存済みの実状態（entityStates）から導出する —
-  // プレイ中に move したPCの位置が初期位置に巻き戻らないように。
-  if (!data.worldState.parties) {
-    const defaults = createDefaultParties(scenario, worldState.entityStates)
-    worldState.parties = defaults.parties
-    worldState.activePartyId = defaults.activePartyId
-  }
-  // lastResult は永続化対象外 — 復元時は常に null
-  return { scenario, worldState, lastResult: null }
-}
-
 function loadSession(): ScenarioSession | null {
   try {
     const json = localStorage.getItem(STORAGE_KEY)
@@ -127,6 +72,29 @@ function saveSession(session: ScenarioSession) {
 let idCounter = Date.now()
 function genId(prefix: string): string {
   return `${prefix}-${(idCounter++).toString(36)}`
+}
+
+/**
+ * scenario.entities のうち1エンティティだけを patch で差し替えた新 Scenario を返す。
+ * 「entities.map で1件だけ更新」の唯一の書き方 — 個別サイトでの書き間違いを塞ぐ。
+ */
+function patchEntity(scenario: Scenario, entityId: string, patch: (e: Entity) => Entity): Scenario {
+  return {
+    ...scenario,
+    entities: scenario.entities.map((e) => (e.id === entityId ? patch(e) : e)),
+  }
+}
+
+/**
+ * カテゴリの options に値を追記した新 Scenario を返す。
+ * 自由入力値の自動追加（setCategoryValue / shareKnowledge）はここを通る。
+ * 呼び出し側は「値を設定するとき」だけ呼ぶこと — 除去（トグルOFF）で選択肢を増やさない。
+ */
+function addCategoryOption(scenario: Scenario, entityId: string, categoryId: string, value: string): Scenario {
+  return patchEntity(scenario, entityId, (e) => ({
+    ...e,
+    categories: e.categories.map((c) => (c.id === categoryId ? { ...c, options: [...c.options, value] } : c)),
+  }))
 }
 
 export function useScenario() {
@@ -225,6 +193,11 @@ export function useScenario() {
     }
 
     mutate(api)
+    // シナリオ縮小（removeEntity 等）後の参照切れ（ghost entityStates /
+    // memberIds / locationId / activePartyId / 空パーティ）をここで必ず掃除する。
+    // scenarioOverride の有無で分岐しない — 冪等かつ O(n) なので無条件実行とし、
+    // パーティ操作だけのパス（splitParty の空 husk 等）も同じチョークポイントで整合させる。
+    reconcileWorldWithScenario(ws, scenario)
     const result = stabilize(ws, scenario)
     commitMutation({
       ...sessionRef.current,
@@ -289,39 +262,32 @@ export function useScenario() {
   /** KP直接操作: カテゴリ値を変更して stabilize */
   const setCategoryValue = useCallback((entityId: string, categoryId: string, value: string) => {
     if (!sessionRef.current) return
-    const { scenario } = sessionRef.current
+    const { scenario, worldState } = sessionRef.current
 
     const entity = scenario.entities.find((e) => e.id === entityId)
     const cat = entity?.categories.find((c) => c.id === categoryId)
     if (!entity || !cat) return
 
-    // 自由入力値は選択肢に自動追加（v5: 即興を阻害しない）。
+    // 非排他カテゴリで既に保持している値ならトグルOFF（除去）。
+    // 選択肢の自動追加より先に判定する — 除去操作で options を増やしてはならない。
+    const current = worldState.entityStates[entityId]?.categoryValues[categoryId]
+    const isToggleOff = !cat.exclusive && Array.isArray(current) && current.includes(value)
+
+    // 自由入力値は「設定するとき」だけ選択肢に自動追加（v5: 即興を阻害しない）。
     // scenarioOverride で状態変更と同一コミット — undo も一体で戻る。
     let scenarioOverride: Scenario | undefined
-    if (value && !cat.options.includes(value)) {
-      scenarioOverride = {
-        ...scenario,
-        entities: scenario.entities.map((e) =>
-          e.id === entityId
-            ? { ...e, categories: e.categories.map((c) => c.id === categoryId ? { ...c, options: [...c.options, value] } : c) }
-            : e,
-        ),
-      }
+    if (!isToggleOff && value && !cat.options.includes(value)) {
+      scenarioOverride = addCategoryOption(scenario, entityId, categoryId, value)
     }
 
     mutateAndStabilize((api) => {
-      // Non-exclusive toggle-off
-      if (!cat.exclusive) {
-        const val = api.worldState.entityStates[entityId]?.categoryValues[categoryId]
-        const arr = Array.isArray(val) ? val : []
-        if (arr.includes(value)) {
-          api.applyEffect(
-            { type: 'removeCategory', target: { type: 'named', entityId }, categoryId, value },
-            entityId,
-          )
-          api.log('system', entityId, `${entity.name}: ${cat.name} − ${value}`)
-          return
-        }
+      if (isToggleOff) {
+        api.applyEffect(
+          { type: 'removeCategory', target: { type: 'named', entityId }, categoryId, value },
+          entityId,
+        )
+        api.log('system', entityId, `${entity.name}: ${cat.name} − ${value}`)
+        return
       }
 
       api.applyEffect(
@@ -426,7 +392,12 @@ export function useScenario() {
     })
   }, [mutateAndStabilize])
 
-  /** アクティブパーティにメンバーを追加する（NPC同行用）。重複追加は無視 */
+  /**
+   * アクティブパーティにメンバーを追加する（NPC同行用）。重複追加は無視。
+   * 他パーティに所属していたら抜いてから追加する（移籍扱い）—
+   * 同一エンティティが2つの名簿に載ると「どこにいるか」をパーティが語れなくなる。
+   * 移籍で空になった元パーティは mutateAndStabilize の整合処理が取り除く。
+   */
   const addToParty = useCallback((entityId: string) => {
     if (!sessionRef.current) return
     const { worldState } = sessionRef.current
@@ -435,9 +406,11 @@ export function useScenario() {
 
     mutateAndStabilize((api) => {
       api.setParties(
-        api.worldState.parties.map((p) =>
-          p.id === active.id ? { ...p, memberIds: [...p.memberIds, entityId] } : p,
-        ),
+        api.worldState.parties.map((p) => {
+          if (p.id === active.id) return { ...p, memberIds: [...p.memberIds, entityId] }
+          if (p.memberIds.includes(entityId)) return { ...p, memberIds: p.memberIds.filter((m) => m !== entityId) }
+          return p
+        }),
         api.worldState.activePartyId,
       )
     })
@@ -493,12 +466,7 @@ export function useScenario() {
     const id = action.id ?? genId('action')
     const newAction: Action = { ...action, id, entityId } as Action
 
-    mutateScenario((scenario) => ({
-      ...scenario,
-      entities: scenario.entities.map((e) =>
-        e.id === entityId ? { ...e, actions: [...e.actions, newAction] } : e,
-      ),
-    }))
+    mutateScenario((scenario) => patchEntity(scenario, entityId, (e) => ({ ...e, actions: [...e.actions, newAction] })))
     return id
   }, [mutateScenario])
 
@@ -509,12 +477,7 @@ export function useScenario() {
     const id = trigger.id ?? genId('trigger')
     const newTrigger: Trigger = { ...trigger, id, entityId } as Trigger
 
-    const newScenario: Scenario = {
-      ...scenario,
-      entities: scenario.entities.map((e) =>
-        e.id === entityId ? { ...e, triggers: [...e.triggers, newTrigger] } : e,
-      ),
-    }
+    const newScenario = patchEntity(scenario, entityId, (e) => ({ ...e, triggers: [...e.triggers, newTrigger] }))
 
     // New trigger might fire immediately → stabilize (no mutation needed, just re-evaluate)
     mutateAndStabilize(() => {}, newScenario)
@@ -563,25 +526,13 @@ export function useScenario() {
     if (existing) {
       targetCategoryId = existing.id
       if (!existing.options.includes(value)) {
-        scenarioOverride = {
-          ...scenario,
-          entities: scenario.entities.map((e) =>
-            e.id === toEntityId
-              ? { ...e, categories: e.categories.map((c) => c.id === existing.id ? { ...c, options: [...c.options, value] } : c) }
-              : e,
-          ),
-        }
+        scenarioOverride = addCategoryOption(scenario, toEntityId, existing.id, value)
       }
     } else {
       targetCategoryId = genId('cat')
       const options = fromCat.options.includes(value) ? [...fromCat.options] : [...fromCat.options, value]
       const newCat: Category = { id: targetCategoryId, name: fromCat.name, exclusive: false, options }
-      scenarioOverride = {
-        ...scenario,
-        entities: scenario.entities.map((e) =>
-          e.id === toEntityId ? { ...e, categories: [...e.categories, newCat] } : e,
-        ),
-      }
+      scenarioOverride = patchEntity(scenario, toEntityId, (e) => ({ ...e, categories: [...e.categories, newCat] }))
     }
 
     mutateAndStabilize((api) => {
@@ -626,12 +577,7 @@ export function useScenario() {
   /** Update entity properties (name, description, labels, parentId, connections, entryCondition) */
   const updateEntity = useCallback((entityId: string, patch: Partial<Pick<Entity, 'name' | 'description' | 'labels' | 'parentId' | 'connections' | 'entryCondition'>>) => {
     if (!sessionRef.current) return
-    const newScenario: Scenario = {
-      ...sessionRef.current.scenario,
-      entities: sessionRef.current.scenario.entities.map((e) =>
-        e.id === entityId ? { ...e, ...patch } : e,
-      ),
-    }
+    const newScenario = patchEntity(sessionRef.current.scenario, entityId, (e) => ({ ...e, ...patch }))
     // parentId change affects world state
     if ('parentId' in patch) {
       mutateAndStabilize((api) => {
@@ -643,7 +589,11 @@ export function useScenario() {
     }
   }, [mutateAndStabilize, mutateScenario])
 
-  /** Remove entity + all children from scenario and world state */
+  /**
+   * Remove entity + all children from scenario and world state.
+   * シナリオから消すだけでよい — ghost entityStates / memberIds / locationId /
+   * activePartyId の掃除は mutateAndStabilize 内の reconcileWorldWithScenario が行う。
+   */
   const removeEntity = useCallback((entityId: string) => {
     if (!sessionRef.current) return
     const { scenario } = sessionRef.current
@@ -677,12 +627,7 @@ export function useScenario() {
     const id = category.id ?? genId('cat')
     const newCat: Category = { ...category, id } as Category
 
-    const newScenario: Scenario = {
-      ...sessionRef.current.scenario,
-      entities: sessionRef.current.scenario.entities.map((e) =>
-        e.id === entityId ? { ...e, categories: [...e.categories, newCat] } : e,
-      ),
-    }
+    const newScenario = patchEntity(sessionRef.current.scenario, entityId, (e) => ({ ...e, categories: [...e.categories, newCat] }))
 
     mutateAndStabilize((api) => {
       const es = api.worldState.entityStates[entityId]
@@ -699,14 +644,10 @@ export function useScenario() {
   const updateCategoryDef = useCallback((entityId: string, categoryId: string, patch: Partial<Pick<Category, 'name' | 'exclusive' | 'options' | 'descriptions'>>) => {
     if (!sessionRef.current) return
 
-    const newScenario: Scenario = {
-      ...sessionRef.current.scenario,
-      entities: sessionRef.current.scenario.entities.map((e) =>
-        e.id === entityId
-          ? { ...e, categories: e.categories.map((c) => c.id === categoryId ? { ...c, ...patch } : c) }
-          : e,
-      ),
-    }
+    const newScenario = patchEntity(sessionRef.current.scenario, entityId, (e) => ({
+      ...e,
+      categories: e.categories.map((c) => (c.id === categoryId ? { ...c, ...patch } : c)),
+    }))
 
     // If options changed, the current value might be invalid → re-initialize
     mutateAndStabilize((api) => {
@@ -738,12 +679,10 @@ export function useScenario() {
   const removeCategoryDef = useCallback((entityId: string, categoryId: string) => {
     if (!sessionRef.current) return
 
-    const newScenario: Scenario = {
-      ...sessionRef.current.scenario,
-      entities: sessionRef.current.scenario.entities.map((e) =>
-        e.id === entityId ? { ...e, categories: e.categories.filter((c) => c.id !== categoryId) } : e,
-      ),
-    }
+    const newScenario = patchEntity(sessionRef.current.scenario, entityId, (e) => ({
+      ...e,
+      categories: e.categories.filter((c) => c.id !== categoryId),
+    }))
 
     mutateAndStabilize((api) => {
       const es = api.worldState.entityStates[entityId]
@@ -759,47 +698,35 @@ export function useScenario() {
 
   /** Update an action definition (schema-only — 表示条件や効果の変更は次の実行時に反映される) */
   const updateAction = useCallback((entityId: string, actionId: string, patch: Partial<Omit<Action, 'id' | 'entityId'>>) => {
-    mutateScenario((scenario) => ({
-      ...scenario,
-      entities: scenario.entities.map((e) =>
-        e.id === entityId
-          ? { ...e, actions: e.actions.map((a) => a.id === actionId ? { ...a, ...patch } : a) }
-          : e,
-      ),
-    }))
+    mutateScenario((scenario) => patchEntity(scenario, entityId, (e) => ({
+      ...e,
+      actions: e.actions.map((a) => (a.id === actionId ? { ...a, ...patch } : a)),
+    })))
   }, [mutateScenario])
 
   /** Update a trigger definition — 新しい条件が現状態で即発火しうるので stabilize 必須 */
   const updateTrigger = useCallback((entityId: string, triggerId: string, patch: Partial<Omit<Trigger, 'id' | 'entityId'>>) => {
     if (!sessionRef.current) return
-    const newScenario: Scenario = {
-      ...sessionRef.current.scenario,
-      entities: sessionRef.current.scenario.entities.map((e) =>
-        e.id === entityId
-          ? { ...e, triggers: e.triggers.map((t) => t.id === triggerId ? { ...t, ...patch } : t) }
-          : e,
-      ),
-    }
+    const newScenario = patchEntity(sessionRef.current.scenario, entityId, (e) => ({
+      ...e,
+      triggers: e.triggers.map((t) => (t.id === triggerId ? { ...t, ...patch } : t)),
+    }))
     mutateAndStabilize(() => {}, newScenario)
   }, [mutateAndStabilize])
 
   const removeAction = useCallback((entityId: string, actionId: string) => {
-    mutateScenario((scenario) => ({
-      ...scenario,
-      entities: scenario.entities.map((e) =>
-        e.id === entityId ? { ...e, actions: e.actions.filter((a) => a.id !== actionId) } : e,
-      ),
-    }))
+    mutateScenario((scenario) => patchEntity(scenario, entityId, (e) => ({
+      ...e,
+      actions: e.actions.filter((a) => a.id !== actionId),
+    })))
   }, [mutateScenario])
 
   const removeTrigger = useCallback((entityId: string, triggerId: string) => {
     if (!sessionRef.current) return
-    const newScenario: Scenario = {
-      ...sessionRef.current.scenario,
-      entities: sessionRef.current.scenario.entities.map((e) =>
-        e.id === entityId ? { ...e, triggers: e.triggers.filter((t) => t.id !== triggerId) } : e,
-      ),
-    }
+    const newScenario = patchEntity(sessionRef.current.scenario, entityId, (e) => ({
+      ...e,
+      triggers: e.triggers.filter((t) => t.id !== triggerId),
+    }))
     mutateAndStabilize(() => {}, newScenario)
   }, [mutateAndStabilize])
 
