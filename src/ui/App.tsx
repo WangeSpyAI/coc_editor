@@ -1,6 +1,6 @@
 import { useMemo, useCallback, useState, useRef } from 'react'
 import './styles.css'
-import { useScenario } from '../hooks/useScenario'
+import { useScenario, type PersistedSession } from '../hooks/useScenario'
 import { EntityTree } from './EntityTree'
 import { EntityPanel } from './EntityPanel'
 import { LiveEditor } from './LiveEditor'
@@ -15,7 +15,8 @@ export function App() {
     undo,
     createScenario,
     loadScenario,
-    exportScenario,
+    importSession,
+    exportSession,
     selectEntity,
     doAction,
     setCategoryValue,
@@ -71,17 +72,21 @@ export function App() {
     const reader = new FileReader()
     reader.onload = () => {
       try {
-        const scenario = JSON.parse(reader.result as string) as Scenario
-        if (scenario.entities && scenario.title) {
-          loadScenario(scenario)
+        const parsed = JSON.parse(reader.result as string) as Record<string, unknown>
+        if (parsed.scenario && parsed.worldState) {
+          // セッションエクスポート形式 → 進行状態ごと復元
+          importSession(parsed as unknown as PersistedSession)
+        } else if (parsed.entities && parsed.title) {
+          // 素のシナリオ形式 → 初期状態で開始
+          loadScenario(parsed as unknown as Scenario)
         }
       } catch { /* invalid JSON */ }
     }
     reader.readAsText(file)
-  }, [loadScenario])
+  }, [loadScenario, importSession])
 
   const handleExport = useCallback(() => {
-    const json = exportScenario()
+    const json = exportSession()
     if (!json) return
     const blob = new Blob([json], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -90,7 +95,7 @@ export function App() {
     a.download = `${session?.scenario.title ?? 'scenario'}.json`
     a.click()
     URL.revokeObjectURL(url)
-  }, [exportScenario, session?.scenario.title])
+  }, [exportSession, session?.scenario.title])
 
   // Landing page
   if (!session) {

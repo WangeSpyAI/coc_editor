@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
-import type { Scenario, WorldState, ReadonlyWorldState, ReadonlyParty, Entity, Action, Effect, Trigger, LogEntry, Category } from '../core/types'
+import type { Scenario, WorldState, ReadonlyWorldState, ReadonlyParty, Entity, Action, Effect, Trigger, LogEntry, Category, ConditionClause } from '../core/types'
 import {
   initializeWorldState,
   createDefaultParties,
@@ -11,6 +11,7 @@ import {
   pushLog,
   canEnter,
   composeSceneDescription,
+  resolveReference,
   type StabilizeResult,
 } from '../core/engine'
 
@@ -54,26 +55,64 @@ interface MutationAPI {
 }
 
 
+/**
+ * セッションの永続化形式。localStorage 保存とファイルエクスポートの両方がこの形 —
+ * シリアライザが1つなので「保存はできるが読み込めない」形式乖離が起きない。
+ *
+ * - firedTriggerIds は JSON 化のため配列
+ * - lastResult は含めない（一時的な stabilize レポートでありセッション状態ではない。
+ *   永続化するとマイグレーション漏れの温床になる）
+ * - 旧データは formatVersion / parties を持たないことがある（revive で補完）
+ */
+export interface PersistedSession {
+  formatVersion?: 1
+  scenario: Scenario
+  worldState: Omit<WorldState, 'firedTriggerIds' | 'parties' | 'activePartyId'> &
+    Partial<Pick<WorldState, 'parties' | 'activePartyId'>> & { firedTriggerIds: string[] }
+}
+
+function serializeSession(session: ScenarioSession): PersistedSession {
+  return {
+    formatVersion: 1,
+    scenario: session.scenario,
+    worldState: {
+      ...session.worldState,
+      firedTriggerIds: [...session.worldState.firedTriggerIds],
+    } as PersistedSession['worldState'],
+  }
+}
+
+/** 永続化形式から ScenarioSession を復元する（localStorage / インポートファイル共通） */
+function reviveSession(data: PersistedSession): ScenarioSession {
+  const scenario = data.scenario
+  // Migrate: 古いデータに connections がない場合は補完
+  for (const e of scenario.entities) {
+    if (!e.connections) e.connections = []
+  }
+  const worldState: WorldState = {
+    ...data.worldState,
+    firedTriggerIds: new Set(data.worldState.firedTriggerIds),
+    parties: data.worldState.parties ?? [],
+    activePartyId: data.worldState.activePartyId ?? null,
+  }
+  // Migrate: 古いデータに parties / activePartyId がない場合は
+  // initializeWorldState と同じロジック（createDefaultParties）で補完。
+  // 位置はシナリオ定義ではなく保存済みの実状態（entityStates）から導出する —
+  // プレイ中に move したPCの位置が初期位置に巻き戻らないように。
+  if (!data.worldState.parties) {
+    const defaults = createDefaultParties(scenario, worldState.entityStates)
+    worldState.parties = defaults.parties
+    worldState.activePartyId = defaults.activePartyId
+  }
+  // lastResult は永続化対象外 — 復元時は常に null
+  return { scenario, worldState, lastResult: null }
+}
+
 function loadSession(): ScenarioSession | null {
   try {
     const json = localStorage.getItem(STORAGE_KEY)
     if (!json) return null
-    const data = JSON.parse(json)
-    data.worldState.firedTriggerIds = new Set(data.worldState.firedTriggerIds)
-    // Migrate: 古いデータに connections がない場合は補完
-    for (const e of data.scenario.entities) {
-      if (!e.connections) e.connections = []
-    }
-    // Migrate: 古いデータに parties / activePartyId がない場合は
-    // initializeWorldState と同じロジック（createDefaultParties）で補完。
-    // 位置はシナリオ定義ではなく保存済みの実状態（entityStates）から導出する —
-    // プレイ中に move したPCの位置が初期位置に巻き戻らないように。
-    if (!data.worldState.parties) {
-      const defaults = createDefaultParties(data.scenario, data.worldState.entityStates)
-      data.worldState.parties = defaults.parties
-      data.worldState.activePartyId = defaults.activePartyId
-    }
-    return data as ScenarioSession
+    return reviveSession(JSON.parse(json) as PersistedSession)
   } catch {
     return null
   }
@@ -81,14 +120,7 @@ function loadSession(): ScenarioSession | null {
 
 function saveSession(session: ScenarioSession) {
   try {
-    const data = {
-      ...session,
-      worldState: {
-        ...session.worldState,
-        firedTriggerIds: [...session.worldState.firedTriggerIds],
-      },
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeSession(session)))
   } catch { /* storage full */ }
 }
 
@@ -224,6 +256,12 @@ export function useScenario() {
     setSelectedEntityId(null)
   }, [lifecycleReset])
 
+  /** エクスポートされたセッション（scenario + worldState）を復元する。進行状態ごと再開 */
+  const importSession = useCallback((data: PersistedSession) => {
+    lifecycleReset(reviveSession(data))
+    setSelectedEntityId(null)
+  }, [lifecycleReset])
+
   const selectEntity = useCallback((id: string | null) => {
     setSelectedEntityId(id)
   }, [])
@@ -257,6 +295,20 @@ export function useScenario() {
     const cat = entity?.categories.find((c) => c.id === categoryId)
     if (!entity || !cat) return
 
+    // 自由入力値は選択肢に自動追加（v5: 即興を阻害しない）。
+    // scenarioOverride で状態変更と同一コミット — undo も一体で戻る。
+    let scenarioOverride: Scenario | undefined
+    if (value && !cat.options.includes(value)) {
+      scenarioOverride = {
+        ...scenario,
+        entities: scenario.entities.map((e) =>
+          e.id === entityId
+            ? { ...e, categories: e.categories.map((c) => c.id === categoryId ? { ...c, options: [...c.options, value] } : c) }
+            : e,
+        ),
+      }
+    }
+
     mutateAndStabilize((api) => {
       // Non-exclusive toggle-off
       if (!cat.exclusive) {
@@ -277,7 +329,7 @@ export function useScenario() {
         entityId,
       )
       api.log('system', entityId, `${entity.name}: ${cat.name} → ${value}`)
-    })
+    }, scenarioOverride)
   }, [mutateAndStabilize])
 
   // === Party operations (パーティ操作と移動) ===
@@ -479,10 +531,100 @@ export function useScenario() {
     })
   }, [mutateAndStabilize])
 
+  // === Session assistance (セッション支援) ===
+
+  /**
+   * 知識の共有: from のカテゴリ値を to にコピーする（PC間の情報共有用）。
+   *
+   * to に同じ受け皿がなければ作る:
+   *   1. 同IDのカテゴリ定義があればそれを使う
+   *   2. なければ同名・非排他のカテゴリを再利用（過去の共有で作られたもの。
+   *      毎回新規作成すると共有のたびに同名カテゴリが増殖するため）
+   *   3. それもなければ同名・非排他のカテゴリを新規IDで to のスキーマに追加
+   *
+   * スキーマ追加と値コピーは scenarioOverride で同一コミット — undo も一体で戻る。
+   */
+  const shareKnowledge = useCallback((fromEntityId: string, toEntityId: string, categoryId: string, value: string) => {
+    if (!sessionRef.current) return
+    const { scenario } = sessionRef.current
+    const from = scenario.entities.find((e) => e.id === fromEntityId)
+    const to = scenario.entities.find((e) => e.id === toEntityId)
+    const fromCat = from?.categories.find((c) => c.id === categoryId)
+    if (!from || !to || !fromCat) return
+
+    const existing =
+      to.categories.find((c) => c.id === categoryId)
+      ?? to.categories.find((c) => c.name === fromCat.name && !c.exclusive)
+
+    // UI（StateBadges）は options にある値しか描画しない —
+    // 共有値が選択肢に入っていないと「共有したのに見えない」が起きるため必ず含める。
+    let targetCategoryId: string
+    let scenarioOverride: Scenario | undefined
+    if (existing) {
+      targetCategoryId = existing.id
+      if (!existing.options.includes(value)) {
+        scenarioOverride = {
+          ...scenario,
+          entities: scenario.entities.map((e) =>
+            e.id === toEntityId
+              ? { ...e, categories: e.categories.map((c) => c.id === existing.id ? { ...c, options: [...c.options, value] } : c) }
+              : e,
+          ),
+        }
+      }
+    } else {
+      targetCategoryId = genId('cat')
+      const options = fromCat.options.includes(value) ? [...fromCat.options] : [...fromCat.options, value]
+      const newCat: Category = { id: targetCategoryId, name: fromCat.name, exclusive: false, options }
+      scenarioOverride = {
+        ...scenario,
+        entities: scenario.entities.map((e) =>
+          e.id === toEntityId ? { ...e, categories: [...e.categories, newCat] } : e,
+        ),
+      }
+    }
+
+    mutateAndStabilize((api) => {
+      api.applyEffect(
+        { type: 'setCategory', target: { type: 'named', entityId: toEntityId }, categoryId: targetCategoryId, value },
+        toEntityId,
+      )
+      api.log('system', fromEntityId, `${from.name}が${to.name}に「${value}」を共有`)
+    }, scenarioOverride)
+  }, [mutateAndStabilize])
+
+  /**
+   * 待機中トリガーの未充足節をワンクリックで充足させる（KP支援）。
+   * negate 節（「〜でない」）は値の付与では充足できないので何もしない。
+   * 充足後は mutateAndStabilize が自動で stabilize → トリガーが発火する。
+   */
+  const fulfillPendingClause = useCallback((ownerEntityId: string, clause: ConditionClause) => {
+    if (!sessionRef.current) return
+    if (clause.negate) return
+    const { scenario, worldState } = sessionRef.current
+
+    const targets = resolveReference(
+      clause.reference, ownerEntityId, worldState.entityStates, buildChildrenMap(worldState.entityStates),
+    )
+    const targetId = targets[0]
+    if (!targetId) return
+
+    const targetEntity = scenario.entities.find((e) => e.id === targetId)
+    const catName = targetEntity?.categories.find((c) => c.id === clause.categoryId)?.name ?? clause.categoryId
+
+    mutateAndStabilize((api) => {
+      api.applyEffect(
+        { type: 'setCategory', target: { type: 'named', entityId: targetId }, categoryId: clause.categoryId, value: clause.value },
+        targetId,
+      )
+      api.log('system', targetId, `付与: ${targetEntity?.name ?? targetId}: ${catName} → ${clause.value}`)
+    })
+  }, [mutateAndStabilize])
+
   // === Entity Update/Delete ===
 
-  /** Update entity properties (name, description, labels, parentId, connections) */
-  const updateEntity = useCallback((entityId: string, patch: Partial<Pick<Entity, 'name' | 'description' | 'labels' | 'parentId' | 'connections'>>) => {
+  /** Update entity properties (name, description, labels, parentId, connections, entryCondition) */
+  const updateEntity = useCallback((entityId: string, patch: Partial<Pick<Entity, 'name' | 'description' | 'labels' | 'parentId' | 'connections' | 'entryCondition'>>) => {
     if (!sessionRef.current) return
     const newScenario: Scenario = {
       ...sessionRef.current.scenario,
@@ -553,8 +695,8 @@ export function useScenario() {
     return id
   }, [mutateAndStabilize])
 
-  /** Update a category definition (name, exclusive, options) */
-  const updateCategoryDef = useCallback((entityId: string, categoryId: string, patch: Partial<Pick<Category, 'name' | 'exclusive' | 'options'>>) => {
+  /** Update a category definition (name, exclusive, options, descriptions) */
+  const updateCategoryDef = useCallback((entityId: string, categoryId: string, patch: Partial<Pick<Category, 'name' | 'exclusive' | 'options' | 'descriptions'>>) => {
     if (!sessionRef.current) return
 
     const newScenario: Scenario = {
@@ -613,7 +755,33 @@ export function useScenario() {
     }, newScenario)
   }, [mutateAndStabilize])
 
-  // === Action/Trigger Delete ===
+  // === Action/Trigger Update/Delete ===
+
+  /** Update an action definition (schema-only — 表示条件や効果の変更は次の実行時に反映される) */
+  const updateAction = useCallback((entityId: string, actionId: string, patch: Partial<Omit<Action, 'id' | 'entityId'>>) => {
+    mutateScenario((scenario) => ({
+      ...scenario,
+      entities: scenario.entities.map((e) =>
+        e.id === entityId
+          ? { ...e, actions: e.actions.map((a) => a.id === actionId ? { ...a, ...patch } : a) }
+          : e,
+      ),
+    }))
+  }, [mutateScenario])
+
+  /** Update a trigger definition — 新しい条件が現状態で即発火しうるので stabilize 必須 */
+  const updateTrigger = useCallback((entityId: string, triggerId: string, patch: Partial<Omit<Trigger, 'id' | 'entityId'>>) => {
+    if (!sessionRef.current) return
+    const newScenario: Scenario = {
+      ...sessionRef.current.scenario,
+      entities: sessionRef.current.scenario.entities.map((e) =>
+        e.id === entityId
+          ? { ...e, triggers: e.triggers.map((t) => t.id === triggerId ? { ...t, ...patch } : t) }
+          : e,
+      ),
+    }
+    mutateAndStabilize(() => {}, newScenario)
+  }, [mutateAndStabilize])
 
   const removeAction = useCallback((entityId: string, actionId: string) => {
     mutateScenario((scenario) => ({
@@ -655,6 +823,12 @@ export function useScenario() {
     return JSON.stringify(sessionRef.current.scenario, null, 2)
   }, [])
 
+  /** セッション全体（scenario + worldState）をエクスポート。localStorage 保存と同じシリアライザ */
+  const exportSession = useCallback((): string | null => {
+    if (!sessionRef.current) return null
+    return JSON.stringify(serializeSession(sessionRef.current), null, 2)
+  }, [])
+
   // === Undo (スタックから復元。commitMutationもlifecycleResetも通さない) ===
 
   const undo = useCallback(() => {
@@ -682,7 +856,9 @@ export function useScenario() {
     // Scenario lifecycle
     createScenario,
     loadScenario,
+    importSession,
     exportScenario,
+    exportSession,
     resetWorld,
     clearSession,
     // UI state
@@ -691,6 +867,8 @@ export function useScenario() {
     doAction,
     setCategoryValue,
     applyAdHoc,
+    shareKnowledge,
+    fulfillPendingClause,
     // Party operations
     setActiveParty,
     moveParty,
@@ -706,8 +884,10 @@ export function useScenario() {
     updateCategoryDef,
     removeCategoryDef,
     addAction,
+    updateAction,
     removeAction,
     addTrigger,
+    updateTrigger,
     removeTrigger,
     // Derived
     getPending,
