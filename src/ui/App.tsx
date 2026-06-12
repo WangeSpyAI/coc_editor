@@ -4,6 +4,7 @@ import { useScenario, type PersistedSession } from '../hooks/useScenario'
 import { EntityTree } from './EntityTree'
 import { EntityPanel } from './EntityPanel'
 import { LiveEditor } from './LiveEditor'
+import { LogPane } from './LogPane'
 import { sampleScenario } from '../core/sampleScenario'
 import type { Entity, Scenario } from '../core/types'
 
@@ -221,6 +222,11 @@ export function App() {
             )}
           </div>
         )}
+      </div>
+
+      {/* Log: 描写ログペイン（エンティティ未選択でも常時表示） */}
+      <div className="layout-log">
+        <LogPane log={worldState.log} scenario={scenario} />
       </div>
     </div>
   )

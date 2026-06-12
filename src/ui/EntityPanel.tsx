@@ -58,11 +58,6 @@ export function EntityPanel({
     [worldState, scenario, entity.id],
   )
 
-  const relatedLogs = useMemo(
-    () => worldState.log.filter((l) => l.sourceEntityId === entity.id).slice(-20),
-    [worldState.log, entity.id],
-  )
-
   const formatClause = (c: ConditionClause): string => {
     const refLabel =
       c.reference.type === 'named'
@@ -229,21 +224,6 @@ export function EntityPanel({
             </div>
           ))}
         </Section>
-      )}
-
-      {/* Logs */}
-      {relatedLogs.length > 0 && (
-        <div className="log-section">
-          <Section title="ログ">
-            {relatedLogs.map((log, i) => (
-              <div key={i} className="log-entry">
-                <span className="log-step">#{log.timestamp}</span>
-                <span className={`log-type ${log.type}`}>{log.type}</span>
-                {log.description}
-              </div>
-            ))}
-          </Section>
-        </div>
       )}
 
       {/* Delete */}

@@ -35,7 +35,7 @@ body {
 .app-layout {
   display: grid;
   grid-template-columns: 260px 1fr;
-  grid-template-rows: 48px 1fr;
+  grid-template-rows: 48px 1fr auto;
   height: 100vh;
   gap: 1px;
   background: var(--border);
@@ -75,6 +75,7 @@ body {
   background: var(--bg-surface);
   overflow-y: auto;
   padding: 8px 0;
+  grid-row: 2 / 4; /* メイン+ログの2行ぶんを占める */
 }
 
 .tree-node {
@@ -136,10 +137,138 @@ body {
 }
 
 .layout-main {
+  grid-row: 2;
+  grid-column: 2;
   background: var(--bg);
   overflow-y: auto;
   padding: 24px 32px;
   max-width: 800px;
+}
+
+.layout-log {
+  grid-row: 3;
+  grid-column: 2;
+  background: var(--bg-surface);
+  min-width: 0; /* グリッド子の幅あふれ防止（長文の描写でも壊れない） */
+}
+
+/* ===== Log Pane (layout-log スロット内のコンポーネント) ===== */
+.log-pane {
+  display: flex;
+  flex-direction: column;
+}
+
+.log-pane-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+  user-select: none;
+  min-height: 30px;
+}
+
+.log-pane-header:hover {
+  background: var(--bg-hover);
+}
+
+.log-pane-toggle {
+  font-size: 10px;
+  color: var(--text-dim);
+  width: 12px;
+}
+
+.log-pane-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.log-pane-count {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.log-pane-body {
+  height: 180px;
+  overflow-y: auto;
+  padding: 0 12px 8px;
+}
+
+.log-pane-empty {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 8px 0;
+}
+
+.log-pane-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.log-pane-entry .log-time {
+  color: var(--text-dim);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.log-pane-entry .log-icon {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+}
+
+.log-pane-entry .log-icon.action { color: var(--accent); }
+.log-pane-entry .log-icon.trigger { color: var(--warning); }
+.log-pane-entry .log-icon.system { color: var(--text-dim); }
+
+.log-pane-entry .log-source {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-pane-entry .log-actor {
+  color: var(--text-dim);
+}
+
+.log-pane-entry .log-desc {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap; /* 描写の改行を保持 */
+  overflow-wrap: break-word;
+  color: var(--text);
+}
+
+.log-copy-btn {
+  opacity: 0;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 0 5px;
+  cursor: pointer;
+  transition: opacity 0.1s, border-color 0.15s;
+}
+
+.log-pane-entry:hover .log-copy-btn {
+  opacity: 1;
+}
+
+.log-copy-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* ===== Entity Panel ===== */
@@ -359,38 +488,6 @@ body {
 }
 
 
-/* ===== Log ===== */
-.log-section {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-
-.log-entry {
-  font-size: 12px;
-  padding: 4px 0;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
-}
-
-.log-entry .log-step {
-  color: var(--text-dim);
-  margin-right: 8px;
-}
-
-.log-entry .log-type {
-  font-weight: 500;
-  margin-right: 4px;
-}
-
-.log-entry .log-type.action {
-  color: var(--accent);
-}
-
-.log-entry .log-type.trigger {
-  color: var(--warning);
-}
-
 /* ===== Pending Triggers ===== */
 .pending-section {
   margin-top: 12px;
@@ -530,7 +627,16 @@ body {
   }
 
   .layout-main {
+    grid-column: 1;
     padding: 16px;
+  }
+
+  .layout-log {
+    grid-column: 1;
+  }
+
+  .log-pane-body {
+    height: 140px;
   }
 }
 
