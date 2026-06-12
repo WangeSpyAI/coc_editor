@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react'
 import type { Entity, Category, ReadonlyWorldState, Scenario, Action, ConditionClause } from '../core/types'
 import { buildChildrenMap, getDescendants, getAvailableActions, getPendingTriggers } from '../core/engine'
 import { StateBadges } from './StateBadges'
+import { PendingList } from './PendingPanel'
+import { describeClause } from './format'
 
 interface Props {
   entity: Entity
@@ -17,6 +19,7 @@ interface Props {
   onRemoveCategoryDef: (entityId: string, categoryId: string) => void
   onRemoveAction: (entityId: string, actionId: string) => void
   onRemoveTrigger: (entityId: string, triggerId: string) => void
+  onFulfill: (ownerEntityId: string, clause: ConditionClause) => void
 }
 
 export function EntityPanel({
@@ -24,7 +27,7 @@ export function EntityPanel({
   onAction, onNavigate, onSetCategory,
   onUpdateEntity, onRemoveEntity,
   onAddCategoryDef, onUpdateCategoryDef, onRemoveCategoryDef,
-  onRemoveAction, onRemoveTrigger,
+  onRemoveAction, onRemoveTrigger, onFulfill,
 }: Props) {
   const state = worldState.entityStates[entity.id]
 
@@ -57,14 +60,6 @@ export function EntityPanel({
     () => getPendingTriggers(worldState, scenario).filter((p) => p.entity.id === entity.id),
     [worldState, scenario, entity.id],
   )
-
-  const formatClause = (c: ConditionClause): string => {
-    const refLabel =
-      c.reference.type === 'named'
-        ? entityMap.get(c.reference.entityId ?? '')?.name ?? c.reference.entityId
-        : c.reference.type === 'self' ? '自身' : c.reference.type
-    return `${refLabel}.${c.categoryId} ${c.negate ? '≠' : '='} ${c.value}`
-  }
 
   return (
     <div className="entity-panel">
@@ -199,7 +194,7 @@ export function EntityPanel({
                     style={{ padding: '2px 6px', fontSize: 10 }}>×</button>
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>
-                  条件: {trigger.condition.clauses.map(formatClause).join(' AND ')}
+                  条件: {trigger.condition.clauses.map((c) => describeClause(c, entity, scenario)).join(' AND ')}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
                   効果: {trigger.effects.map((e) =>
@@ -214,15 +209,15 @@ export function EntityPanel({
         </Section>
       )}
 
-      {/* Pending triggers */}
+      {/* Pending triggers — ヘッダのドロップダウンと同じ PendingList（付与ボタン付き） */}
       {pending.length > 0 && (
         <Section title="待機中（あと1条件）">
-          {pending.map(({ trigger, unmetClauses }) => (
-            <div key={trigger.id} className="pending-trigger">
-              <div className="trigger-name">{trigger.name}</div>
-              <div className="unmet">未充足: {unmetClauses.map(formatClause).join(', ')}</div>
-            </div>
-          ))}
+          <PendingList
+            pending={pending}
+            scenario={scenario}
+            onSelectEntity={onNavigate}
+            onFulfill={onFulfill}
+          />
         </Section>
       )}
 

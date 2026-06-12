@@ -166,6 +166,7 @@ export function App() {
           <span
             className="oscillation-badge"
             title="トリガーが上限ステップまで停止しませんでした。トリガーの循環を確認してください"
+            aria-label="トリガーが上限ステップまで停止しませんでした。トリガーの循環を確認してください"
           >
             ⚠ 振動の可能性
           </span>
@@ -207,6 +208,7 @@ export function App() {
               onRemoveCategoryDef={removeCategoryDef}
               onRemoveAction={removeAction}
               onRemoveTrigger={removeTrigger}
+              onFulfill={fulfillPendingClause}
             />
             <LiveEditor
               scenario={scenario}

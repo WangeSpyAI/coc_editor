@@ -763,14 +763,21 @@ export function getChildren(
     .map(([id]) => id)
 }
 
+/** 待機中トリガー1件: あと1節で発火するトリガーと、その所属エンティティ・未充足節 */
+export interface PendingTrigger {
+  trigger: Trigger
+  entity: Entity
+  unmetClauses: ConditionClause[]
+}
+
 /** 待機中トリガー: 条件が部分充足（残り1つ）のトリガーを検出 */
 export function getPendingTriggers(
   worldState: ReadonlyWorldState,
   scenario: Scenario,
-): { trigger: Trigger; entity: Entity; unmetClauses: ConditionClause[] }[] {
+): PendingTrigger[] {
   const states = worldState.entityStates
   const childrenMap = buildChildrenMap(states)
-  const result: { trigger: Trigger; entity: Entity; unmetClauses: ConditionClause[] }[] = []
+  const result: PendingTrigger[] = []
 
   for (const entity of scenario.entities) {
     for (const trigger of entity.triggers) {
