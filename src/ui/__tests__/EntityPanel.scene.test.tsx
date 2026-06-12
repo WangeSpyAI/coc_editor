@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EntityPanel } from '../EntityPanel'
 import type { Category, Entity, Scenario } from '../../core/types'
-import { initializeWorldState } from '../../core/engine'
+import { applyEffect, buildChildrenMap, initializeWorldState } from '../../core/engine'
 import { changeSelect, click, createDomRenderer } from './testUtils'
 
 function entity(patch: Partial<Entity> & Pick<Entity, 'id' | 'name'>): Entity {
@@ -99,8 +99,13 @@ describe('EntityPanel scene mode', () => {
       }),
     ])
     const ws = initializeWorldState(sc)
-    ws.entityStates.alice.categoryValues.knowledge = ['clue']
-    ws.entityStates.bob.categoryValues['bob-knowledge'] = []
+    applyEffect(
+      { type: 'setCategory', target: { type: 'named', entityId: 'alice' }, categoryId: 'knowledge', value: 'clue' },
+      'alice',
+      ws.entityStates,
+      sc.entities,
+      buildChildrenMap(ws.entityStates),
+    )
     ws.parties = [{ id: 'party-a', name: 'Main', memberIds: ['alice', 'bob'], locationId: 'hall' }]
     ws.activePartyId = 'party-a'
     const moveParty = vi.fn()
@@ -158,5 +163,132 @@ describe('EntityPanel scene mode', () => {
     expect(shareButton?.closest('.share-row')?.textContent).toContain('"clue": Alice → Bob')
     click(shareButton!)
     expect(shareKnowledge).toHaveBeenCalledWith('alice', 'bob', 'knowledge', 'clue')
+  })
+
+  it('falls back to the first eligible actor when the selected actor becomes ineligible', () => {
+    const hall = entity({
+      id: 'hall',
+      name: 'Hall',
+      labels: ['場所'],
+      actions: [
+        {
+          id: 'inspect',
+          entityId: 'hall',
+          name: 'Inspect',
+          description: '$actor inspects the hall.',
+          isPlayerAction: true,
+          requiredKnowledge: ['clue'],
+          effects: [],
+        },
+      ],
+    })
+    const sc = scenario([
+      entity({ id: 'root', name: 'Root' }),
+      { ...hall, parentId: 'root' },
+      entity({ id: 'alice', name: 'Alice', labels: ['PC'], parentId: 'hall', categories: [knowledge] }),
+      entity({ id: 'bob', name: 'Bob', labels: ['PC'], parentId: 'hall', categories: [knowledge] }),
+      entity({ id: 'carol', name: 'Carol', labels: ['PC'], parentId: 'hall', categories: [knowledge] }),
+    ])
+    const ws = initializeWorldState(sc)
+    for (const actorId of ['alice', 'bob', 'carol']) {
+      applyEffect(
+        { type: 'setCategory', target: { type: 'named', entityId: actorId }, categoryId: 'knowledge', value: 'clue' },
+        actorId,
+        ws.entityStates,
+        sc.entities,
+        buildChildrenMap(ws.entityStates),
+      )
+    }
+    ws.parties = [{ id: 'party-a', name: 'Main', memberIds: ['alice', 'bob', 'carol'], locationId: 'hall' }]
+    ws.activePartyId = 'party-a'
+    const onAction = vi.fn()
+
+    const renderPanel = () => dom.render(
+      <EntityPanel
+        entity={sc.entities.find((e) => e.id === 'hall')!}
+        scenario={sc}
+        worldState={ws}
+        onAction={onAction}
+        onNavigate={vi.fn()}
+        onMoveParty={vi.fn()}
+        onShareKnowledge={vi.fn()}
+        onSetCategory={vi.fn()}
+        onUpdateEntity={vi.fn()}
+        onRemoveEntity={vi.fn()}
+        onAddCategoryDef={vi.fn()}
+        onUpdateCategoryDef={vi.fn()}
+        onRemoveCategoryDef={vi.fn()}
+        onRemoveAction={vi.fn()}
+        onRemoveTrigger={vi.fn()}
+        onFulfill={vi.fn()}
+      />,
+    )
+
+    renderPanel()
+    changeSelect(dom.container.querySelector('.scene-actor-select') as HTMLSelectElement, 'bob')
+
+    applyEffect(
+      { type: 'removeCategory', target: { type: 'named', entityId: 'bob' }, categoryId: 'knowledge', value: 'clue' },
+      'bob',
+      ws.entityStates,
+      sc.entities,
+      buildChildrenMap(ws.entityStates),
+    )
+    renderPanel()
+
+    const actorSelect = dom.container.querySelector('.scene-actor-select') as HTMLSelectElement
+    expect(Array.from(actorSelect.options).map((option) => option.value)).toEqual(['alice', 'carol'])
+    expect(actorSelect.value).toBe('alice')
+
+    click(dom.container.querySelector('.scene-action-run')!)
+    expect(onAction).toHaveBeenCalledWith('inspect', 'alice', undefined)
+  })
+
+  it('uses live world parent state when listing same-parent location navigation', () => {
+    const sc = scenario([
+      entity({ id: 'root', name: 'Root' }),
+      entity({ id: 'lower', name: 'Lower Level', labels: ['場所'], parentId: 'root' }),
+      entity({ id: 'hall', name: 'Hall', labels: ['場所'], parentId: 'root' }),
+      entity({ id: 'study', name: 'Study', labels: ['場所'], parentId: 'root' }),
+      entity({ id: 'cellar', name: 'Cellar', labels: ['場所'], parentId: 'lower' }),
+      entity({ id: 'alice', name: 'Alice', labels: ['PC'], parentId: 'hall' }),
+    ])
+    const ws = initializeWorldState(sc)
+    applyEffect(
+      { type: 'move', target: { type: 'named', entityId: 'cellar' }, newParentId: 'root' },
+      'cellar',
+      ws.entityStates,
+      sc.entities,
+      buildChildrenMap(ws.entityStates),
+    )
+    ws.parties = [{ id: 'party-a', name: 'Main', memberIds: ['alice'], locationId: 'hall' }]
+    ws.activePartyId = 'party-a'
+
+    dom.render(
+      <EntityPanel
+        entity={sc.entities.find((e) => e.id === 'hall')!}
+        scenario={sc}
+        worldState={ws}
+        onAction={vi.fn()}
+        onNavigate={vi.fn()}
+        onMoveParty={vi.fn()}
+        onShareKnowledge={vi.fn()}
+        onSetCategory={vi.fn()}
+        onUpdateEntity={vi.fn()}
+        onRemoveEntity={vi.fn()}
+        onAddCategoryDef={vi.fn()}
+        onUpdateCategoryDef={vi.fn()}
+        onRemoveCategoryDef={vi.fn()}
+        onRemoveAction={vi.fn()}
+        onRemoveTrigger={vi.fn()}
+        onFulfill={vi.fn()}
+      />,
+    )
+
+    const navButtons = Array.from(dom.container.querySelectorAll('.scene-nav-button'))
+    expect(navButtons.map((button) => button.textContent)).toEqual(
+      expect.arrayContaining(['Study', 'Cellar']),
+    )
+    expect(navButtons.map((button) => button.textContent)).not.toContain('Hall')
   })
 })

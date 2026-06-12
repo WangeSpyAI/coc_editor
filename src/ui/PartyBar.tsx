@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Entity, ReadonlyWorldState, Scenario } from '../core/types'
 
 interface Props {
@@ -38,6 +38,13 @@ export function PartyBar({
   const mergeCandidates = activeParty
     ? worldState.parties.filter((party) => party.id !== activeParty.id && party.locationId === activeParty.locationId)
     : []
+  const validMergeSourceId = mergeCandidates.some((party) => party.id === mergeSourceId)
+    ? mergeSourceId
+    : mergeCandidates[0]?.id ?? ''
+
+  useEffect(() => {
+    setSplitMemberIds(new Set())
+  }, [activeParty?.id])
 
   const handlePartyClick = (partyId: string, locationId: string | null) => {
     onSetActiveParty(partyId)
@@ -64,7 +71,9 @@ export function PartyBar({
   }
 
   const submitMerge = () => {
-    const srcPartyId = mergeSourceId || mergeCandidates[0]?.id
+    const srcPartyId = mergeCandidates.some((party) => party.id === validMergeSourceId)
+      ? validMergeSourceId
+      : ''
     if (!srcPartyId) return
     onMergeParties(srcPartyId)
     setMergeSourceId('')
@@ -124,7 +133,7 @@ export function PartyBar({
               <div className="party-merge">
                 <select
                   className="party-select"
-                  value={mergeSourceId || (mergeCandidates[0]?.id ?? '')}
+                  value={validMergeSourceId}
                   onChange={(e) => setMergeSourceId(e.target.value)}
                 >
                   {mergeCandidates.map((party) => (

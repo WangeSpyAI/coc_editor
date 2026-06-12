@@ -94,14 +94,13 @@ export function EntityPanel({
     if (!isLocation) return []
     const ids = new Set<string>()
     for (const id of entity.connections) ids.add(id)
-    for (const candidate of scenario.entities) {
-      if (candidate.id !== entity.id && candidate.parentId === entity.parentId) ids.add(candidate.id)
-    }
+    const parentId = worldState.entityStates[entity.id]?.parentId ?? entity.parentId
+    for (const id of childrenMap[parentId ?? '__root__'] ?? []) ids.add(id)
     return [...ids]
       .map((id) => entityMap.get(id))
       .filter((candidate): candidate is Entity => Boolean(candidate?.labels.includes('場所')))
       .filter((candidate) => candidate.id !== entity.id)
-  }, [entity.connections, entity.id, entity.parentId, entityMap, isLocation, scenario.entities])
+  }, [childrenMap, entity.connections, entity.id, entity.parentId, entityMap, isLocation, worldState.entityStates])
 
   const shareRows = useMemo(() => {
     if (!isLocation || !activeParty) return []
@@ -235,37 +234,20 @@ export function EntityPanel({
       {descendantActions.length > 0 && !isLocation && (
         <Section title="アクション">
           <div className="action-list">
-            {descendantActions.map(({ entity: owner, action }) => {
-              const roll = action.rollRequirement
-              return (
-                <div key={action.id} className="action-card">
-                  <div className="action-info">
-                    <div className="action-name">
-                      {action.name}
-                      {roll && (
-                        <span style={{ fontSize: 11, color: 'var(--warning)', marginLeft: 6 }}>
-                          [{roll.skill}{roll.difficulty ? ` ${roll.difficulty}` : ''}{roll.opposed ? ' 対抗' : ''}]
-                        </span>
-                      )}
-                    </div>
-                    {owner.id !== entity.id && <div className="action-owner">{owner.name}</div>}
-                  </div>
-                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                    {!roll ? (
-                      <button className="action-btn" onClick={() => onAction(action.id)}>実行</button>
-                    ) : (
-                      <>
-                        <button className="action-btn" onClick={() => onAction(action.id, undefined, 'success')}>成功</button>
-                        <button className="action-btn" style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
-                          onClick={() => onAction(action.id, undefined, 'failure')}>失敗</button>
-                      </>
-                    )}
-                    <button className="btn btn-sm btn-danger" onClick={() => onRemoveAction(owner.id, action.id)}
-                      style={{ padding: '2px 6px', fontSize: 10 }}>×</button>
-                  </div>
-                </div>
-              )
-            })}
+            {descendantActions.map(({ entity: owner, action }) => (
+              <ActionCard
+                key={action.id}
+                owner={owner}
+                currentEntity={entity}
+                action={action}
+                actorControls={{ mode: 'none' }}
+                onRun={(rollResult) => {
+                  if (rollResult) onAction(action.id, undefined, rollResult)
+                  else onAction(action.id)
+                }}
+                onRemove={() => onRemoveAction(owner.id, action.id)}
+              />
+            ))}
           </div>
         </Section>
       )}
@@ -465,7 +447,7 @@ function SceneActions({
         <Section title="PL行動">
           <div className="action-list">
             {playerActions.map(({ entity: owner, action }) => (
-              <SceneActionCard
+              <SceneActionCardWithActors
                 key={action.id}
                 owner={owner}
                 currentEntity={entity}
@@ -486,17 +468,14 @@ function SceneActions({
         <Section title="KP判断">
           <div className="action-list">
             {keeperActions.map(({ entity: owner, action }) => (
-              <SceneActionCard
+              <ActionCard
                 key={action.id}
                 owner={owner}
                 currentEntity={entity}
                 action={action}
-                worldState={worldState}
-                scenario={scenario}
-                selectedActorId={undefined}
-                onSelectActor={() => {}}
-                onAction={onAction}
-                onRemoveAction={onRemoveAction}
+                actorControls={{ mode: 'none' }}
+                onRun={(rollResult) => onAction(action.id, undefined, rollResult)}
+                onRemove={() => onRemoveAction(owner.id, action.id)}
               />
             ))}
           </div>
@@ -506,7 +485,19 @@ function SceneActions({
   )
 }
 
-function SceneActionCard({
+type RollResult = 'success' | 'failure'
+
+type ActionCardActorControls =
+  | { mode: 'none' }
+  | { mode: 'auto-single'; actorName: string }
+  | {
+      mode: 'dropdown'
+      actorId: string
+      actors: { id: string; name: string }[]
+      onSelectActor: (actorId: string) => void
+    }
+
+function SceneActionCardWithActors({
   owner,
   currentEntity,
   action,
@@ -524,24 +515,62 @@ function SceneActionCard({
   scenario: Scenario
   selectedActorId?: string
   onSelectActor: (actorId: string) => void
-  onAction: (actionId: string, actorId?: string, rollResult?: 'success' | 'failure') => void
+  onAction: (actionId: string, actorId?: string, rollResult?: RollResult) => void
   onRemoveAction: (entityId: string, actionId: string) => void
 }) {
-  const roll = action.rollRequirement
-  const eligibleActors = action.isPlayerAction ? getEligibleActors(action, worldState, scenario) : []
-  const actorId = action.isPlayerAction
-    ? eligibleActors.length === 1
-      ? eligibleActors[0]
-      : selectedActorId || eligibleActors[0] || ''
-    : undefined
-  const actorName = actorId ? scenario.entities.find((candidate) => candidate.id === actorId)?.name ?? actorId : ''
-  const disabled = action.isPlayerAction && eligibleActors.length === 0
+  const eligibleActors = getEligibleActors(action, worldState, scenario)
+  const selectedActorIsEligible = selectedActorId ? eligibleActors.includes(selectedActorId) : false
+  const actorId = (selectedActorIsEligible ? selectedActorId : eligibleActors[0]) ?? ''
+  const disabled = eligibleActors.length === 0
   const disabledTitle = disabled ? '行為者候補がいません' : undefined
+  const actorName = (id: string) => scenario.entities.find((candidate) => candidate.id === id)?.name ?? id
+  const actorControls: ActionCardActorControls = disabled
+    ? { mode: 'none' }
+    : eligibleActors.length === 1
+      ? { mode: 'auto-single', actorName: actorName(actorId) }
+      : {
+          mode: 'dropdown',
+          actorId,
+          actors: eligibleActors.map((id) => ({ id, name: actorName(id) })),
+          onSelectActor,
+        }
 
-  const run = (rollResult?: 'success' | 'failure') => {
-    if (disabled) return
-    onAction(action.id, actorId, rollResult)
-  }
+  return (
+    <ActionCard
+      owner={owner}
+      currentEntity={currentEntity}
+      action={action}
+      actorControls={actorControls}
+      disabled={disabled}
+      disabledTitle={disabledTitle}
+      onRun={(rollResult) => {
+        if (!disabled) onAction(action.id, actorId, rollResult)
+      }}
+      onRemove={() => onRemoveAction(owner.id, action.id)}
+    />
+  )
+}
+
+function ActionCard({
+  owner,
+  currentEntity,
+  action,
+  actorControls,
+  disabled = false,
+  disabledTitle,
+  onRun,
+  onRemove,
+}: {
+  owner: Entity
+  currentEntity: Entity
+  action: Action
+  actorControls: ActionCardActorControls
+  disabled?: boolean
+  disabledTitle?: string
+  onRun: (rollResult?: RollResult) => void
+  onRemove: () => void
+}) {
+  const roll = action.rollRequirement
 
   return (
     <div className="action-card">
@@ -555,21 +584,20 @@ function SceneActionCard({
           )}
         </div>
         {owner.id !== currentEntity.id && <div className="action-owner">{owner.name}</div>}
-        {action.isPlayerAction && eligibleActors.length === 1 && (
-          <div className="scene-actor-hint">{actorName}</div>
+        {actorControls.mode === 'auto-single' && (
+          <div className="scene-actor-hint">{actorControls.actorName}</div>
         )}
       </div>
       <div className="scene-action-controls">
-        {action.isPlayerAction && eligibleActors.length > 1 && (
+        {actorControls.mode === 'dropdown' && (
           <select
             className="scene-actor-select"
-            value={actorId}
-            onChange={(e) => onSelectActor(e.target.value)}
+            value={actorControls.actorId}
+            onChange={(e) => actorControls.onSelectActor(e.target.value)}
           >
-            {eligibleActors.map((id) => {
-              const actor = scenario.entities.find((candidate) => candidate.id === id)
-              return <option key={id} value={id}>{actor?.name ?? id}</option>
-            })}
+            {actorControls.actors.map((actor) => (
+              <option key={actor.id} value={actor.id}>{actor.name}</option>
+            ))}
           </select>
         )}
         {!roll ? (
@@ -578,7 +606,7 @@ function SceneActionCard({
             type="button"
             disabled={disabled}
             title={disabledTitle}
-            onClick={() => run()}
+            onClick={() => onRun()}
           >
             実行
           </button>
@@ -589,7 +617,7 @@ function SceneActionCard({
               type="button"
               disabled={disabled}
               title={disabledTitle}
-              onClick={() => run('success')}
+              onClick={() => onRun('success')}
             >
               成功
             </button>
@@ -598,7 +626,7 @@ function SceneActionCard({
               type="button"
               disabled={disabled}
               title={disabledTitle}
-              onClick={() => run('failure')}
+              onClick={() => onRun('failure')}
             >
               失敗
             </button>
@@ -607,7 +635,7 @@ function SceneActionCard({
         <button
           className="btn btn-sm btn-danger scene-action-remove"
           type="button"
-          onClick={() => onRemoveAction(owner.id, action.id)}
+          onClick={onRemove}
         >
           ×
         </button>
