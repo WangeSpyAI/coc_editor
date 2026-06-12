@@ -1,73 +1,42 @@
-# React + TypeScript + Vite
+# CoC TRPG Scenario Editor
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+ペトリネット意味論に基づく、KP向けのCoCシナリオエディタです。
+場面中心でシナリオを扱い、PLへ渡す「描写」を成果物として残すことを重視しています。
 
-Currently, two official plugins are available:
+設計思想とデータモデルは [docs/spec/trpg_scenario_editor_v5.md](docs/spec/trpg_scenario_editor_v5.md) を参照してください。
+実装計画や検証メモは [docs/plans/](docs/plans/) にあります。
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 機能概要
 
-## React Compiler
+### 執筆
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- エンティティテンプレート: 場所 / NPC / PC / アイテム / 空
+- カテゴリ定義と現在値編集
+- アクション、トリガー、表示条件、ロール条件のインライン編集
+- 付与 / 除去 / 移動の効果GUI編集
+- カテゴリ値ごとの描写編集
 
-## Expanding the ESLint configuration
+### セッション
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- パーティ移動と行為者選択
+- 待機中トリガーの通知とワンクリック付与
+- 描写ログの記録とコピー
+- PC間の情報共有
+- undo
+- JSON保存: シナリオのみ / セッション込み
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## 開発
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
+npm test -- --run
+npm run build
+npm run lint
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## デプロイ
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+GitHub Pages へのデプロイは `.github/workflows/deploy.yml` で行います。
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+公開URL: https://wangespyai.github.io/coc_editor/
