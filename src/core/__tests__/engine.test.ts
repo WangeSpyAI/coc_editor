@@ -22,6 +22,7 @@ import {
   applyEffect,
   composeSceneDescription,
   canEnter,
+  reconcileWorldWithScenario,
 } from '../engine'
 
 // ===== テスト用ヘルパー =====
@@ -765,6 +766,13 @@ describe('canEnter（場所の進入条件）', () => {
     expect(canEnter('basement', ws, scenario)).toBe(false)
   })
 
+  it('シナリオに存在しないエンティティには入れない（ダングリングIDへの移動を防ぐ）', () => {
+    const scenario = makeScenario(entities)
+    const ws = initializeWorldState(scenario)
+
+    expect(canEnter('no-such-place', ws, scenario)).toBe(false)
+  })
+
   it('negate 条件を評価できる', () => {
     // 「施錠でない」ことが進入条件
     const negEntities: Entity[] = [
@@ -1103,5 +1111,129 @@ describe('getEligibleActors', () => {
     const ws = initializeWorldState(scenario)
 
     expect(getEligibleActors(makeAction({}), ws, scenario)).toEqual([])
+  })
+})
+
+// ===== シナリオ整合（reconcileWorldWithScenario）テスト =====
+// removeEntity 等でシナリオが縮小した後、WorldState の参照切れが
+// チョークポイント1箇所で必ず掃除されることを検証する。
+
+describe('reconcileWorldWithScenario', () => {
+  // house > study > { desk, pc-akira }, house > pc-yui
+  const baseEntities = (): Entity[] => [
+    { id: 'house', name: '館', parentId: null, description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+    { id: 'study', name: '書斎', parentId: 'house', description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+    { id: 'desk', name: '机', parentId: 'study', description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+    { id: 'pc-akira', name: '明', parentId: 'study', description: '', labels: ['PC'], connections: [], categories: [], actions: [], triggers: [] },
+    { id: 'pc-yui', name: '結衣', parentId: 'house', description: '', labels: ['PC'], connections: [], categories: [], actions: [], triggers: [] },
+  ]
+
+  /** baseEntities から指定IDを除いた縮小シナリオ */
+  const shrink = (...removed: string[]): Scenario =>
+    makeScenario(baseEntities().filter((e) => !removed.includes(e.id)))
+
+  it('シナリオから消えたエンティティの ghost entityStates を除去する', () => {
+    const ws = initializeWorldState(makeScenario(baseEntities()))
+    const shrunk = shrink('desk')
+
+    const changed = reconcileWorldWithScenario(ws, shrunk)
+
+    expect(changed).toBe(true)
+    expect(ws.entityStates['desk']).toBeUndefined()
+    expect(ws.entityStates['study']).toBeDefined()
+    expect(ws.entityStates['pc-akira']).toBeDefined()
+  })
+
+  it('削除されたメンバーは memberIds から刈り込まれる', () => {
+    const ws = initializeWorldState(makeScenario(baseEntities()))
+    expect(ws.parties[0].memberIds).toEqual(['pc-akira', 'pc-yui'])
+
+    reconcileWorldWithScenario(ws, shrink('pc-akira'))
+
+    expect(ws.parties[0].memberIds).toEqual(['pc-yui'])
+  })
+
+  it('locationId が削除されたら削除前の親鎖で最近傍の生存祖先に付け替える（生存メンバーは物理移動しない）', () => {
+    const ws = initializeWorldState(makeScenario(baseEntities()))
+    expect(ws.parties[0].locationId).toBe('study') // 先頭PC（明）の位置
+
+    // study サブツリー（study, desk, pc-akira）を削除
+    reconcileWorldWithScenario(ws, shrink('study', 'desk', 'pc-akira'))
+
+    expect(ws.parties.length).toBe(1)
+    expect(ws.parties[0].memberIds).toEqual(['pc-yui'])
+    expect(ws.parties[0].locationId).toBe('house') // study の削除前の親
+    expect(ws.activePartyId).toBe('party-default')
+    // 生存メンバーの実位置（parentId）には触らない
+    expect(ws.entityStates['pc-yui'].parentId).toBe('house')
+  })
+
+  it('生存祖先が無ければ locationId は null になる', () => {
+    // camp はルート直下 → camp を消すと祖先が残らない
+    const entities: Entity[] = [
+      { id: 'camp', name: '野営地', parentId: null, description: '', labels: [], connections: [], categories: [], actions: [], triggers: [] },
+      { id: 'pc-akira', name: '明', parentId: 'camp', description: '', labels: ['PC'], connections: [], categories: [], actions: [], triggers: [] },
+      { id: 'pc-yui', name: '結衣', parentId: null, description: '', labels: ['PC'], connections: [], categories: [], actions: [], triggers: [] },
+    ]
+    const ws = initializeWorldState(makeScenario(entities))
+    expect(ws.parties[0].locationId).toBe('camp')
+
+    const shrunk = makeScenario(entities.filter((e) => e.id !== 'camp' && e.id !== 'pc-akira'))
+    reconcileWorldWithScenario(ws, shrunk)
+
+    expect(ws.parties[0].memberIds).toEqual(['pc-yui'])
+    expect(ws.parties[0].locationId).toBe(null)
+  })
+
+  it('メンバーが空になったパーティは取り除かれ activePartyId は先頭の生存パーティへフォールバックする', () => {
+    const ws = initializeWorldState(makeScenario(baseEntities()))
+    ws.parties = [
+      { id: 'p1', name: '別動隊', memberIds: ['pc-akira'], locationId: 'study' },
+      { id: 'p2', name: '本隊', memberIds: ['pc-yui'], locationId: 'house' },
+    ]
+    ws.activePartyId = 'p1'
+
+    reconcileWorldWithScenario(ws, shrink('pc-akira'))
+
+    expect(ws.parties.map((p) => p.id)).toEqual(['p2'])
+    expect(ws.activePartyId).toBe('p2')
+  })
+
+  it('全パーティが消えたら activePartyId は null になる', () => {
+    const ws = initializeWorldState(makeScenario(baseEntities()))
+
+    reconcileWorldWithScenario(ws, shrink('pc-akira', 'pc-yui'))
+
+    expect(ws.parties).toEqual([])
+    expect(ws.activePartyId).toBe(null)
+  })
+
+  it('splitParty 直後の空パーティ（husk）はシナリオが変わらなくても取り除かれる', () => {
+    const scenario = makeScenario(baseEntities())
+    const ws = initializeWorldState(scenario)
+    // splitParty で全員が新パーティに移った直後の状態を再現
+    ws.parties = [
+      { id: 'party-default', name: 'パーティ', memberIds: [], locationId: 'study' },
+      { id: 'party-new', name: '探索班', memberIds: ['pc-akira', 'pc-yui'], locationId: 'study' },
+    ]
+    ws.activePartyId = 'party-new'
+
+    const changed = reconcileWorldWithScenario(ws, scenario)
+
+    expect(changed).toBe(true)
+    expect(ws.parties.map((p) => p.id)).toEqual(['party-new'])
+    expect(ws.activePartyId).toBe('party-new')
+  })
+
+  it('整合済みの世界には何もしない（冪等・false を返す）', () => {
+    const scenario = makeScenario(baseEntities())
+    const ws = initializeWorldState(scenario)
+
+    expect(reconcileWorldWithScenario(ws, scenario)).toBe(false)
+
+    // 一度掃除した後の再実行も false（冪等）
+    const shrunk = shrink('study', 'desk', 'pc-akira')
+    expect(reconcileWorldWithScenario(ws, shrunk)).toBe(true)
+    expect(reconcileWorldWithScenario(ws, shrunk)).toBe(false)
   })
 })

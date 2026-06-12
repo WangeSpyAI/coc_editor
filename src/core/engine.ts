@@ -368,10 +368,97 @@ export function stabilize(
   return { worldState, firedTriggers, reachedFixedPoint: false }
 }
 
+// ===== シナリオ整合（縮小後の参照切れ掃除） =====
+
+/**
+ * WorldState をシナリオ定義と整合させる。
+ *
+ * removeEntity 等でシナリオが縮小したとき、WorldState には参照切れが残る:
+ *   - ghost entityStates（resolveReference('named') は states を見るため、
+ *     削除済みエンティティにトリガーがマッチし続け、エクスポートにも残り続ける）
+ *   - party.memberIds の削除済みメンバー
+ *   - party.locationId のダングリング参照
+ *
+ * これらを全てここで掃除する:
+ *   1. シナリオに無いエンティティの entityStates を除去
+ *   2. party.memberIds を生存エンティティに刈り込む
+ *   3. party.locationId が消えていたら「削除前の親鎖」を遡って最近傍の
+ *      生存祖先に付け替える（生存祖先が無ければ null）。
+ *      生存メンバーを物理移動はしない — メンバー自身の parentId は
+ *      entityStates が持っており、削除サブツリー内のメンバーは自身も削除済み
+ *   4. メンバーが空になったパーティは取り除く（空の husk を残さない）
+ *   5. activePartyId が消えていたら先頭の生存パーティ（無ければ null）
+ *
+ * 冪等かつ O(エンティティ数 + パーティ数)。mutateAndStabilize が毎回呼ぶことで、
+ * 全てのシナリオ縮小パス（removeEntity、将来の削除系操作）が自動的に安全になる。
+ *
+ * @returns 変更があったか
+ */
+export function reconcileWorldWithScenario(ws: WorldState, scenario: Scenario): boolean {
+  const valid = new Set(scenario.entities.map((e) => e.id))
+  let changed = false
+
+  // 削除前の親子関係を先に確保する —
+  // locationId のフォールバック先は削除されたエンティティの親鎖でしか辿れない
+  const parentOf: Record<string, string | null> = {}
+  for (const [id, s] of Object.entries(ws.entityStates)) parentOf[id] = s.parentId
+
+  // 1. ghost entityStates の除去
+  for (const id of Object.keys(ws.entityStates)) {
+    if (!valid.has(id)) {
+      delete ws.entityStates[id]
+      changed = true
+    }
+  }
+
+  // 削除前の親鎖を遡って最近傍の生存祖先を探す（循環は打ち切って null）
+  const nearestSurvivingAncestor = (startId: string): string | null => {
+    const seen = new Set<string>()
+    let cur: string | null = startId
+    while (cur !== null && !valid.has(cur)) {
+      if (seen.has(cur)) return null
+      seen.add(cur)
+      cur = parentOf[cur] ?? null
+    }
+    return cur
+  }
+
+  // 2〜4. パーティの整合
+  const survivingParties: Party[] = []
+  for (const party of ws.parties) {
+    let p = party
+    const members = p.memberIds.filter((m) => valid.has(m))
+    if (members.length !== p.memberIds.length) {
+      p = { ...p, memberIds: members }
+      changed = true
+    }
+    if (p.locationId !== null && !valid.has(p.locationId)) {
+      p = { ...p, locationId: nearestSurvivingAncestor(p.locationId) }
+      changed = true
+    }
+    if (p.memberIds.length === 0) {
+      changed = true
+      continue
+    }
+    survivingParties.push(p)
+  }
+  ws.parties = survivingParties
+
+  // 5. activePartyId のフォールバック
+  if (ws.activePartyId !== null && !ws.parties.some((p) => p.id === ws.activePartyId)) {
+    ws.activePartyId = ws.parties[0]?.id ?? null
+    changed = true
+  }
+
+  return changed
+}
+
 // ===== 進入条件 =====
 
 /**
  * 場所への進入可否を判定する。
+ * シナリオに存在しないエンティティには進入不可 —
+ * true を返すと moveParty がメンバーをダングリングIDの下へ移動させてしまう。
  * entryCondition がなければ常に進入可。あれば対象場所を selfId として評価する。
  */
 export function canEnter(
@@ -380,7 +467,8 @@ export function canEnter(
   scenario: Scenario,
 ): boolean {
   const entity = scenario.entities.find((e) => e.id === entityId)
-  if (!entity?.entryCondition) return true
+  if (!entity) return false
+  if (!entity.entryCondition) return true
 
   const states = worldState.entityStates
   const childrenMap = buildChildrenMap(states)
