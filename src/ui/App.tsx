@@ -53,7 +53,9 @@ export function App() {
   )
 
   const handleAction = useCallback((actionId: string, rollResult?: 'success' | 'failure') => {
-    doAction(actionId, 'PC', rollResult)
+    // 行為者選択は C2 で配線する。'PC' というIDのエンティティは存在しないため
+    // ハードコードせず undefined（行為者なし）で実行する。
+    doAction(actionId, undefined, rollResult)
   }, [doAction])
 
   const handleNavigate = useCallback((entityId: string) => {

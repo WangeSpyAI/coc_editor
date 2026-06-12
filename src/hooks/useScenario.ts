@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
-import type { Scenario, WorldState, ReadonlyWorldState, Entity, Action, Effect, Trigger, LogEntry, Category } from '../core/types'
+import type { Scenario, WorldState, ReadonlyWorldState, ReadonlyParty, Entity, Action, Effect, Trigger, LogEntry, Category } from '../core/types'
 import {
   initializeWorldState,
   createDefaultParties,
@@ -9,6 +9,8 @@ import {
   getPendingTriggers,
   buildChildrenMap,
   pushLog,
+  canEnter,
+  composeSceneDescription,
   type StabilizeResult,
 } from '../core/engine'
 
@@ -43,6 +45,12 @@ interface MutationAPI {
   initEntity(entityId: string, parentId: string | null, categoryValues: Record<string, string | string[]>): void
   /** ログを追加する */
   log(type: LogEntry['type'], sourceEntityId: string, description: string, actorId?: string): void
+  /**
+   * パーティ編成を差し替える（防御的コピーが入る）。
+   * 触れるのはパーティ構成のみ — メンバーの位置変更は move Effect（applyEffect）経由。
+   * entityStates に触る道はここにも存在しない。
+   */
+  setParties(parties: readonly ReadonlyParty[], activePartyId: string | null): void
 }
 
 
@@ -173,6 +181,15 @@ export function useScenario() {
       log(type, sourceEntityId, description, actorId) {
         pushLog(ws, { type, sourceEntityId, description, actorId })
       },
+      setParties(parties, activePartyId) {
+        ws.parties = parties.map((p) => ({
+          id: p.id,
+          name: p.name,
+          memberIds: [...p.memberIds],
+          locationId: p.locationId,
+        }))
+        ws.activePartyId = activePartyId
+      },
     }
 
     mutate(api)
@@ -260,6 +277,134 @@ export function useScenario() {
         entityId,
       )
       api.log('system', entityId, `${entity.name}: ${cat.name} → ${value}`)
+    })
+  }, [mutateAndStabilize])
+
+  // === Party operations (パーティ操作と移動) ===
+
+  /** アクティブパーティを切り替える（編成は変えない。ログ不要） */
+  const setActiveParty = useCallback((partyId: string) => {
+    if (!sessionRef.current) return
+    const { worldState } = sessionRef.current
+    if (worldState.activePartyId === partyId) return
+    if (!worldState.parties.some((p) => p.id === partyId)) return
+    mutateAndStabilize((api) => {
+      api.setParties(api.worldState.parties, partyId)
+    })
+  }, [mutateAndStabilize])
+
+  /**
+   * アクティブパーティを場所へ移動する。
+   * - canEnter false（進入条件未充足）なら何もしない
+   * - 全メンバーに move Effect → party.locationId 更新
+   * - ログ: 移動の記録 + 移動先の場面描写（空なら省略）
+   */
+  const moveParty = useCallback((locationId: string) => {
+    if (!sessionRef.current) return
+    const { scenario, worldState } = sessionRef.current
+    const party = worldState.parties.find((p) => p.id === worldState.activePartyId)
+    if (!party) return
+    if (!canEnter(locationId, worldState, scenario)) return
+    const locationName = scenario.entities.find((e) => e.id === locationId)?.name ?? locationId
+
+    mutateAndStabilize((api) => {
+      for (const memberId of party.memberIds) {
+        api.applyEffect(
+          { type: 'move', target: { type: 'named', entityId: memberId }, newParentId: locationId },
+          memberId,
+        )
+      }
+      api.setParties(
+        api.worldState.parties.map((p) => (p.id === party.id ? { ...p, locationId } : p)),
+        api.worldState.activePartyId,
+      )
+      api.log('system', locationId, `パーティ「${party.name}」が「${locationName}」へ移動`)
+      // 移動先の場面描写もログに残す（v5: 描写が成果物）
+      const scene = composeSceneDescription(locationId, api.worldState, scenario)
+      if (scene.length > 0) {
+        api.log('system', locationId, scene.map((s) => s.text).join('\n'))
+      }
+    })
+  }, [mutateAndStabilize])
+
+  /** アクティブパーティから指定メンバーを抜いて新パーティを作り、それをアクティブにする */
+  const splitParty = useCallback((memberIds: string[], newName: string) => {
+    if (!sessionRef.current) return
+    const { scenario, worldState } = sessionRef.current
+    const active = worldState.parties.find((p) => p.id === worldState.activePartyId)
+    if (!active) return
+    const moving = active.memberIds.filter((id) => memberIds.includes(id))
+    if (moving.length === 0) return
+    const newId = genId('party')
+
+    mutateAndStabilize((api) => {
+      const remaining = api.worldState.parties.map((p) =>
+        p.id === active.id ? { ...p, memberIds: p.memberIds.filter((m) => !moving.includes(m)) } : p,
+      )
+      api.setParties(
+        [...remaining, { id: newId, name: newName, memberIds: moving, locationId: active.locationId }],
+        newId,
+      )
+      const names = moving.map((id) => scenario.entities.find((e) => e.id === id)?.name ?? id)
+      api.log('system', active.locationId ?? '', `パーティ「${active.name}」から「${newName}」が分かれた（${names.join('、')}）`)
+    })
+  }, [mutateAndStabilize])
+
+  /** src パーティをアクティブパーティへ統合する（同じ場所にいるときのみ）。src は消える */
+  const mergeParties = useCallback((srcPartyId: string) => {
+    if (!sessionRef.current) return
+    const { worldState } = sessionRef.current
+    const active = worldState.parties.find((p) => p.id === worldState.activePartyId)
+    const src = worldState.parties.find((p) => p.id === srcPartyId)
+    if (!active || !src || src.id === active.id) return
+    if (src.locationId !== active.locationId) return
+
+    mutateAndStabilize((api) => {
+      api.setParties(
+        api.worldState.parties
+          .filter((p) => p.id !== src.id)
+          .map((p) =>
+            p.id === active.id
+              ? { ...p, memberIds: [...p.memberIds, ...src.memberIds.filter((m) => !p.memberIds.includes(m))] }
+              : p,
+          ),
+        active.id,
+      )
+      api.log('system', active.locationId ?? '', `パーティ「${src.name}」が「${active.name}」に合流`)
+    })
+  }, [mutateAndStabilize])
+
+  /** アクティブパーティにメンバーを追加する（NPC同行用）。重複追加は無視 */
+  const addToParty = useCallback((entityId: string) => {
+    if (!sessionRef.current) return
+    const { worldState } = sessionRef.current
+    const active = worldState.parties.find((p) => p.id === worldState.activePartyId)
+    if (!active || active.memberIds.includes(entityId)) return
+
+    mutateAndStabilize((api) => {
+      api.setParties(
+        api.worldState.parties.map((p) =>
+          p.id === active.id ? { ...p, memberIds: [...p.memberIds, entityId] } : p,
+        ),
+        api.worldState.activePartyId,
+      )
+    })
+  }, [mutateAndStabilize])
+
+  /** アクティブパーティからメンバーを除く */
+  const removeFromParty = useCallback((entityId: string) => {
+    if (!sessionRef.current) return
+    const { worldState } = sessionRef.current
+    const active = worldState.parties.find((p) => p.id === worldState.activePartyId)
+    if (!active || !active.memberIds.includes(entityId)) return
+
+    mutateAndStabilize((api) => {
+      api.setParties(
+        api.worldState.parties.map((p) =>
+          p.id === active.id ? { ...p, memberIds: p.memberIds.filter((m) => m !== entityId) } : p,
+        ),
+        api.worldState.activePartyId,
+      )
     })
   }, [mutateAndStabilize])
 
@@ -546,6 +691,13 @@ export function useScenario() {
     doAction,
     setCategoryValue,
     applyAdHoc,
+    // Party operations
+    setActiveParty,
+    moveParty,
+    splitParty,
+    mergeParties,
+    addToParty,
+    removeFromParty,
     // Schema editing
     addEntity,
     updateEntity,
