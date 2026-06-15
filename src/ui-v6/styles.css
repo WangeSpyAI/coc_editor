@@ -244,6 +244,32 @@ textarea {
   white-space: pre-wrap;
 }
 
+.v6-read-aloud-panel {
+  border-color: #2b6cb0;
+  border-left: 5px solid #2b6cb0;
+  background: #f8fbff;
+}
+
+.v6-read-aloud-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.v6-read-aloud-header h3,
+.v6-read-aloud-header p {
+  margin: 0;
+}
+
+.v6-read-aloud-copy {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
 .v6-muted {
   color: #64748b;
 }

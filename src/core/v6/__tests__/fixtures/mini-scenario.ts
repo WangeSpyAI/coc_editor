@@ -193,6 +193,7 @@ export function buildMiniScenario(): MiniScenarioFixture {
     publicDescription: v6Text.public('机の奥で、古い紙片が音を立てる。'),
     keeperNotes: [v6Text.keeper('日記の頁を渡し、地下通路の真相へ進める。')],
     result: {
+      publicText: v6Text.public('机の奥で紙束がほどけ、湿った古い日記の破れた頁が一枚、探索者たちの前に滑り出ます。'),
       setFacts: [studySearched.factId, diary.factId],
       setSlots: [{
         slotId: 'slot-cl-diary-page-disclosure',
@@ -209,6 +210,7 @@ export function buildMiniScenario(): MiniScenarioFixture {
     publicDescription: v6Text.public('足跡は温室と書斎の窓を往復している。'),
     keeperNotes: [v6Text.keeper('鈴木が鍵を隠した疑いを強める。')],
     result: {
+      publicText: v6Text.public('ぬかるんだ足跡は温室から書斎の窓辺へ続き、同じ靴底の跡が往復していると分かります。'),
       setFacts: [mud.factId],
       setSlots: [{
         slotId: 'slot-cl-mud-print-disclosure',

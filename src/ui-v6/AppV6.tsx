@@ -9,6 +9,7 @@ import type {
   LinkedRef,
   LogEntry,
   NearlyFireableEvent,
+  PublicText,
   ReadonlyScenarioSession,
   RevelationId,
   SceneId,
@@ -150,6 +151,56 @@ function formatLogTime(at: number): string {
     minute: '2-digit',
     second: '2-digit',
   })
+}
+
+interface CurrentEventReadAloud {
+  eventName: string
+  publicText: Readonly<PublicText>
+}
+
+function logEventSceneIds(session: ReadonlyScenarioSession, log: LogEntry): readonly SceneId[] {
+  if (log.type === 'event') {
+    return session.scenario.events[log.eventId]?.sceneIds ?? []
+  }
+  if (log.type === 'description' && log.source?.type === 'event') {
+    return session.scenario.events[log.source.id as EventId]?.sceneIds ?? []
+  }
+  return []
+}
+
+function logEventName(session: ReadonlyScenarioSession, log: LogEntry): string {
+  if (log.type === 'event') {
+    return session.scenario.events[log.eventId]?.name ?? log.eventId
+  }
+  if (log.type === 'description' && log.source?.type === 'event') {
+    return session.scenario.events[log.source.id as EventId]?.name ?? log.source.id
+  }
+  return ''
+}
+
+function latestEventReadAloudForScene(
+  session: ReadonlyScenarioSession,
+  sceneId: SceneId,
+): CurrentEventReadAloud | null {
+  for (let index = session.state.log.length - 1; index >= 0; index -= 1) {
+    const log = session.state.log[index]
+    if (!logEventSceneIds(session, log).includes(sceneId)) {
+      continue
+    }
+    if (log.type === 'event' && log.publicText) {
+      return {
+        eventName: logEventName(session, log),
+        publicText: log.publicText,
+      }
+    }
+    if (log.type === 'description' && log.source?.type === 'event') {
+      return {
+        eventName: logEventName(session, log),
+        publicText: log.text,
+      }
+    }
+  }
+  return null
 }
 
 function OrientationOverlay(props: { onClose(): void }) {
@@ -383,9 +434,34 @@ function FireableSceneEvent(props: {
         ))}
       </div>
       <button type="button" onClick={() => onApply(sceneEvent.event.id)}>
-        apply
+        発生させる
       </button>
     </article>
+  )
+}
+
+function CurrentEventReadAloudPanel(props: { readAloud: CurrentEventReadAloud }) {
+  const { readAloud } = props
+  const copyPublicText = () => {
+    if (!navigator.clipboard) return
+    navigator.clipboard.writeText(readAloud.publicText.text).catch(() => { /* clipboard unavailable: silent no-op */ })
+  }
+
+  return (
+    <section
+      className="v6-panel v6-read-aloud-panel"
+      data-testid="current-event-read-aloud"
+      aria-live="polite"
+    >
+      <header className="v6-read-aloud-header">
+        <div>
+          <h3>📣 今読み上げる</h3>
+          <p className="v6-muted">{readAloud.eventName}</p>
+        </div>
+        <button type="button" onClick={copyPublicText}>コピー</button>
+      </header>
+      <p className="v6-read-aloud-copy">{readAloud.publicText.text}</p>
+    </section>
   )
 }
 
@@ -420,6 +496,7 @@ function SceneProjectionPage(props: {
     event.sceneIds.includes(v6.selectedSceneId)
   ))
   const keeperDraft = projection.keeperNotes.map((note) => note.text).join('\n\n')
+  const currentReadAloud = latestEventReadAloudForScene(v6.session, v6.selectedSceneId)
 
   return (
     <section className="v6-screen">
@@ -431,6 +508,8 @@ function SceneProjectionPage(props: {
         </div>
         <span className="v6-muted">{projection.scene.kind}</span>
       </div>
+
+      {currentReadAloud && <CurrentEventReadAloudPanel readAloud={currentReadAloud} />}
 
       <section className="v6-panel v6-public-panel" data-testid="scene-public">
         <h3>PL描写</h3>
@@ -690,7 +769,7 @@ function EventNotice(props: {
         <p className="v6-muted">{eventSceneNames(props.session, props.event.sceneIds)}</p>
         <p>{conditionText(props.session, props.event)}</p>
       </div>
-      <button type="button" onClick={() => props.onApply(props.event.eventId)}>apply</button>
+      <button type="button" onClick={() => props.onApply(props.event.eventId)}>発生させる</button>
     </article>
   )
 }

@@ -26,6 +26,8 @@ const SCREEN_CAPTIONS = {
   search: '「鍵はどこ？」のように、今の事実をすぐ引けます。',
 }
 
+const STUDY_EVENT_READ_ALOUD = '机の奥で紙束がほどけ、湿った古い日記の破れた頁が一枚、探索者たちの前に滑り出ます。'
+
 function buttonByText(container: ParentNode, text: string): HTMLButtonElement {
   const button = Array.from(container.querySelectorAll('button')).find((candidate) => (
     candidate.textContent === text || candidate.textContent?.startsWith(text)
@@ -144,5 +146,28 @@ describe('AppV6', () => {
     ))!)
 
     expect(dom.container.querySelector('[data-testid="active-scene-name"]')?.textContent).toBe(study.name)
+  })
+
+  it('surfaces fired event public read-aloud text on the active scene page', () => {
+    localStorage.setItem('v6_onboarded', '1')
+    const fixture = buildMiniScenario()
+    const study = fixture.session.scenario.scenes['sc-study']
+    const studyEvent = fixture.session.scenario.events['ev-study-search']
+    const keeperOnlyText = studyEvent.keeperNotes?.[0]?.text ?? ''
+
+    dom.render(<AppV6 />)
+
+    click(buttonByText(dom.container, study.name))
+    expect(dom.container.querySelector('[data-testid="current-event-read-aloud"]')).toBeNull()
+    expect(buttonByText(dom.container, '発生させる')).toBeTruthy()
+
+    click(buttonByText(dom.container, '発生させる'))
+
+    const readAloudPanel = dom.container.querySelector('[data-testid="current-event-read-aloud"]')
+    expect(readAloudPanel).not.toBeNull()
+    expect(readAloudPanel?.textContent).toContain('今読み上げる')
+    expect(readAloudPanel?.textContent).toContain(STUDY_EVENT_READ_ALOUD)
+    expect(readAloudPanel?.textContent).not.toContain(keeperOnlyText)
+    expect(buttonByText(readAloudPanel!, 'コピー')).toBeTruthy()
   })
 })
