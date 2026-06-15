@@ -29,6 +29,7 @@ import {
   redo,
   setFact,
   undo,
+  updateSceneText,
 } from '../engine'
 import type { ScenarioSession } from '../types'
 import { reviveSession, serializeSession } from '../persistence'
@@ -405,6 +406,28 @@ describe('v6 Phase 1 core model', () => {
     })
     expect(result.session.state.revelationStates['rev-core'].understood).toBe(true)
     expect(result.session.state.revelationStates['rev-core'].understoodAtChangeId).toBe(result.change.id)
+  })
+
+  it('updates scene public description and keeper notes through a transaction', () => {
+    const session = withTwoScenes()
+
+    const updated = updateSceneText(session, 'sc-study', {
+      publicDescription: '机の上に新しい走り書きがある。',
+      keeperNotes: ['地下通路の存在をここで示す。'],
+    }, { now: NOW })
+
+    expect(updated.session.scenario.scenes['sc-study'].publicDescription).toEqual({
+      visibility: 'public',
+      text: '机の上に新しい走り書きがある。',
+    })
+    expect(updated.session.scenario.scenes['sc-study'].keeperNotes).toEqual([{
+      visibility: 'keeper',
+      text: '地下通路の存在をここで示す。',
+    }])
+    expect(updated.session.history.at(-1)?.label).toBe('update scene text sc-study')
+
+    const undone = undo(updated.session).session
+    expect(undone.scenario.scenes['sc-study']).toEqual(session.scenario.scenes['sc-study'])
   })
 
   it('undo restores scenario/state/log snapshots and redo reapplies them', () => {

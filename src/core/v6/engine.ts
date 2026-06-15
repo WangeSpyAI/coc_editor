@@ -96,6 +96,11 @@ export type CreateRevelationInput = Revelation
 export type CreatePcInput = PC
 export type CreatePartyInput = Party
 
+export interface UpdateSceneTextInput {
+  publicDescription?: string
+  keeperNotes?: string[]
+}
+
 interface DraftContext {
   changeId: ChangeId
   at: number
@@ -992,6 +997,30 @@ export function createScene(
     options,
   )
   return { ...result, sceneId }
+}
+
+export function updateSceneText(
+  session: ReadonlyScenarioSession,
+  sceneId: SceneId,
+  input: UpdateSceneTextInput,
+  options: MutationOptions = {},
+): MutationResult {
+  return mutateAndEvaluate(
+    session,
+    `update scene text ${sceneId}`,
+    (api) => {
+      const draft = api.session as ScenarioSession
+      const scene = draft.scenario.scenes[sceneId]
+      assertPresent(scene, `Scene not found: ${sceneId}`)
+      if (input.publicDescription !== undefined) {
+        scene.publicDescription = emptyPublicText(input.publicDescription)
+      }
+      if (input.keeperNotes !== undefined) {
+        scene.keeperNotes = input.keeperNotes.map((note) => emptyKeeperText(note))
+      }
+    },
+    options,
+  )
 }
 
 export function createFact(
