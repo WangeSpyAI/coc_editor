@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import './styles.css'
 import type {
   EntityId,
@@ -31,6 +31,8 @@ import { useV6Session, type V6SessionController } from './useV6Session'
 
 type ActiveView = 'scene' | 'facts' | 'revelations' | 'events' | 'log' | 'search'
 
+const ONBOARDING_STORAGE_KEY = 'v6_onboarded'
+
 const VIEW_LABELS: Record<ActiveView, string> = {
   scene: 'Scene投影',
   facts: '事実台帳',
@@ -38,6 +40,31 @@ const VIEW_LABELS: Record<ActiveView, string> = {
   events: 'イベント通知',
   log: 'セッションログ',
   search: '検索',
+}
+
+const VIEW_CAPTIONS: Record<ActiveView, string> = {
+  scene: '今プレイヤーがいる場面。読み上げ文・登場NPC・手がかり・出口がここに集まります。',
+  facts: 'この卓で今「成立している事実」の一覧。クリックで成立／未成立を切り替えます。',
+  revelations: 'プレイヤーに気づかせたい真相と、それを渡す手がかり。話が収束しているか、次に何が足りないかが分かります。',
+  events: '今の状況で起こせるイベントと、あと一歩で起こせるイベント。',
+  log: '読み上げや事実の変化の記録。卓の進行ログです。',
+  search: '「鍵はどこ？」のように、今の事実をすぐ引けます。',
+}
+
+function hasCompletedOnboarding(): boolean {
+  try {
+    return localStorage.getItem(ONBOARDING_STORAGE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function persistOnboardingDismissal(): void {
+  try {
+    localStorage.setItem(ONBOARDING_STORAGE_KEY, '1')
+  } catch {
+    // The overlay can still close if localStorage is unavailable.
+  }
 }
 
 function factIsTrue(session: ReadonlyScenarioSession, factId: FactId): boolean {
@@ -123,6 +150,54 @@ function formatLogTime(at: number): string {
     minute: '2-digit',
     second: '2-digit',
   })
+}
+
+function OrientationOverlay(props: { onClose(): void }) {
+  const { onClose } = props
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  return (
+    <div
+      className="v6-onboarding-backdrop"
+      data-testid="v6-onboarding-backdrop"
+      onClick={onClose}
+    >
+      <section
+        className="v6-onboarding-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="v6-onboarding-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2 id="v6-onboarding-title">このツールは？</h2>
+        <p>
+          CoC のキーパー(KP)が、セッション中に必要な情報を手元に出しておくための道具です。多すぎて頭に入りきらない「今の場面・登場NPC・手がかり・分岐」を、あなたの代わりに覚えておく“外部脳”です。
+        </p>
+        <h3>使い方（3ステップ）</h3>
+        <ol>
+          <li>今いる場面を開き、青い「PL描写」をプレイヤーに読み上げる。</li>
+          <li>登場NPCのカードを見て演じる。「KP秘密」はあなただけが見る欄です。</li>
+          <li>プレイヤーが動いたら事実を更新。詰まったら「真相一覧」で“次に渡す手がかり”を確認する。</li>
+        </ol>
+        <p className="v6-onboarding-note">
+          いま開いているのはサンプル「霧鐘荘の消えた鍵」です。自由に触って試してください。
+        </p>
+        <button type="button" className="v6-onboarding-primary" autoFocus onClick={onClose}>
+          サンプルで試す
+        </button>
+      </section>
+    </div>
+  )
 }
 
 function currentSceneForEntity(
@@ -352,6 +427,7 @@ function SceneProjectionPage(props: {
         <div>
           <p className="v6-eyebrow">Scene投影ページ</p>
           <h2 data-testid="active-scene-name">{projection.scene.name}</h2>
+          <p className="v6-screen-caption">{VIEW_CAPTIONS.scene}</p>
         </div>
         <span className="v6-muted">{projection.scene.kind}</span>
       </div>
@@ -473,6 +549,7 @@ function FactLedger(props: { v6: V6SessionController }) {
         <div>
           <p className="v6-eyebrow">Fact</p>
           <h2>事実台帳</h2>
+          <p className="v6-screen-caption">{VIEW_CAPTIONS.facts}</p>
         </div>
       </div>
       <form
@@ -583,6 +660,7 @@ function RevelationList(props: { v6: V6SessionController }) {
         <div>
           <p className="v6-eyebrow">Revelation</p>
           <h2>真相一覧</h2>
+          <p className="v6-screen-caption">{VIEW_CAPTIONS.revelations}</p>
         </div>
       </div>
       <div className="v6-grid">
@@ -628,6 +706,7 @@ function EventNotifications(props: {
         <div>
           <p className="v6-eyebrow">ConditionalEvent</p>
           <h2>イベント通知</h2>
+          <p className="v6-screen-caption">{VIEW_CAPTIONS.events}</p>
         </div>
       </div>
       <section className="v6-panel">
@@ -687,6 +766,7 @@ function SessionLog(props: { v6: V6SessionController }) {
         <div>
           <p className="v6-eyebrow">Timeline</p>
           <h2>セッションログ</h2>
+          <p className="v6-screen-caption">{VIEW_CAPTIONS.log}</p>
         </div>
       </div>
       <form
@@ -738,6 +818,7 @@ function SearchPanel(props: {
         <div>
           <p className="v6-eyebrow">Search</p>
           <h2>検索</h2>
+          <p className="v6-screen-caption">{VIEW_CAPTIONS.search}</p>
         </div>
       </div>
       <input
@@ -790,8 +871,14 @@ function SceneSidebar(props: { v6: V6SessionController }) {
 export function AppV6() {
   const v6 = useV6Session()
   const [activeView, setActiveView] = useState<ActiveView>('scene')
+  const [showOnboarding, setShowOnboarding] = useState(() => !hasCompletedOnboarding())
   const fireable = useMemo(() => listFireableEvents(v6.session), [v6.session])
   const nearlyFireable = useMemo(() => listNearlyFireableEvents(v6.session), [v6.session])
+
+  const closeOnboarding = useCallback(() => {
+    persistOnboardingDismissal()
+    setShowOnboarding(false)
+  }, [])
 
   const openRef = (ref: LinkedRef) => {
     const sceneId = sceneForRef(v6.session, ref)
@@ -818,7 +905,10 @@ export function AppV6() {
       <header className="v6-header">
         <div>
           <p className="v6-eyebrow">TRPG Scenario Editor</p>
-          <h1>{v6.session.scenario.title}</h1>
+          <div className="v6-title-row">
+            <h1>{v6.session.scenario.title}</h1>
+            <span className="v6-sample-badge">サンプル</span>
+          </div>
         </div>
         <nav className="v6-tabs">
           {(Object.keys(VIEW_LABELS) as ActiveView[]).map((view) => (
@@ -834,6 +924,9 @@ export function AppV6() {
           ))}
         </nav>
         <div className="v6-history">
+          <button type="button" aria-label="使い方を開く" onClick={() => setShowOnboarding(true)}>
+            ？使い方
+          </button>
           <button type="button" onClick={v6.undo} disabled={!v6.canUndo}>Undo</button>
           <button type="button" onClick={v6.redo} disabled={!v6.canRedo}>Redo</button>
         </div>
@@ -858,6 +951,8 @@ export function AppV6() {
         <span>{nearlyFireable.length} nearly</span>
         <span>active: {refTitle(v6.session, { type: 'scene', id: v6.selectedSceneId })}</span>
       </footer>
+
+      {showOnboarding && <OrientationOverlay onClose={closeOnboarding} />}
     </div>
   )
 }
